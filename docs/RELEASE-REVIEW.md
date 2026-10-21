@@ -1,8 +1,9 @@
 # Publication review
 
-Prepared for the Omarchy plugin marketplace. No repository was created, no source
-was uploaded, and no listing was submitted during preparation. Publishing requires
-the owner's explicit approval of the concrete source package and destination repo.
+Prepared for the Omarchy plugin marketplace. The source review and tests below
+were completed before publication. The owner approved publishing the reviewed
+package to https://github.com/Robindoris/omajarv. Marketplace listing submission
+is a separate step; repository publication does not imply marketplace approval.
 
 The marketplace publishing guide requires a public GitHub repository, a root
 manifest, README/license, and safe installation/removal. Its validation checks
@@ -48,5 +49,5 @@ Completed checks for this candidate:
   no exact runtime secret data or personal absolute home paths was found. No model,
   audio, environment file, credential file, log, screenshot or private config is packaged.
 
-Your own full-access choice is not bundled. A repository destination and explicit
-publication approval are still required before any upload or marketplace submission.
+Personal full-access settings are not bundled. The approved source destination is
+https://github.com/Robindoris/omajarv. Marketplace listing status is tracked separately.
