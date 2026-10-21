@@ -1,0 +1,21 @@
+# Template installed by install.sh into ~/.config/systemd/user/omarchy-jarvis.service
+# Paths are substituted at install time; do not copy this file by hand.
+[Unit]
+Description=JARVIS voice bridge (local STT/TTS + Omarchy agent)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory="@ROOT@"
+ExecStart=@NODE@ "@ROOT@/server/jarvis-server.mjs"
+Environment=PATH=@HOME@/.local/bin:@HOME@/.local/share/mise/shims:/usr/local/bin:/usr/bin
+Environment=NODE_ENV=production
+UMask=0077
+Restart=on-failure
+RestartSec=3
+KillMode=mixed
+TimeoutStopSec=8
+
+[Install]
+WantedBy=default.target

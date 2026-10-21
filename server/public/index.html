@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#04070a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="JARVIS">
+  <meta name="color-scheme" content="dark">
+  <meta name="robots" content="noindex, nofollow">
+  <title>J.A.R.V.I.S.</title>
+  <link rel="apple-touch-icon" href="/icon-192.png">
+  <link rel="stylesheet" href="jarvis.css?v=omarchy-theme-1">
+  <link rel="stylesheet" href="/theme.css">
+</head>
+<body data-state="boot">
+  <div class="backdrop" aria-hidden="true">
+    <canvas id="dust"></canvas>
+    <div class="grid"></div>
+    <div class="vignette"></div>
+    <div class="scanlines"></div>
+    <div class="frame-corners"></div>
+  </div>
+
+  <div class="app">
+    <header class="hud">
+      <div class="brand">
+        <svg class="brand-mark" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <circle cx="12" cy="12" r="9.2" stroke="currentColor" stroke-width="1" opacity=".55"/>
+          <circle cx="12" cy="12" r="5.4" stroke="currentColor" stroke-width="1" opacity=".8"/>
+          <circle cx="12" cy="12" r="2" fill="currentColor"/>
+          <path d="M12 1.4v3M12 19.6v3M1.4 12h3M19.6 12h3" stroke="currentColor" stroke-width="1"/>
+        </svg>
+        <span class="wordmark">J.A.R.V.I.S.</span>
+      </div>
+      <div class="hud-right">
+        <div class="agent" title="Connected agent">
+          <span class="agent-label">AGENT</span>
+          <span class="agent-name" id="agentName">CODEX</span>
+        </div>
+        <div class="pill" id="statusPill" data-state="boot" role="status" aria-live="polite" aria-atomic="true">
+          <span class="dot" aria-hidden="true"></span>
+          <span id="statusText">BOOT</span>
+        </div>
+      </div>
+    </header>
+
+    <main class="stage">
+      <div class="reactor-wrap">
+        <canvas id="reactor" aria-hidden="true"></canvas>
+        <div class="boot" id="bootOverlay" aria-hidden="true">
+          <pre id="bootText"></pre>
+          <div class="boot-foot">&gt;<span class="boot-cursor"></span></div>
+        </div>
+      </div>
+
+      <div class="readout" aria-hidden="true">
+        <div class="readout-item"><span class="readout-k">MODE</span><span class="readout-v" id="readoutMode">STARTUP</span></div>
+        <div class="readout-item"><span class="readout-k">MIC</span><span class="readout-v" id="readoutMic">-- dB</span></div>
+        <div class="readout-item"><span class="readout-k">SESSION</span><span class="readout-v" id="readoutSession">--</span></div>
+      </div>
+
+      <section class="transcript-wrap" aria-label="Conversation transcript">
+        <div class="transcript-head">
+          <span>LIVE TRANSCRIPT</span>
+          <span class="transcript-hint" id="transcriptHint">STANDBY</span>
+        </div>
+        <div class="transcript" id="transcript" role="log" aria-live="polite" aria-relevant="additions text" aria-atomic="false"></div>
+      </section>
+    </main>
+
+    <footer class="controls">
+      <div class="ptt-row">
+        <button class="icon-btn" id="stopBtn" type="button" aria-label="Stop speaking and cancel the current response" title="Stop / cancel">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M11 5 6.5 9H3v6h3.5L11 19V5Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
+            <path d="m16 9 5 6M21 9l-5 6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+          </svg>
+        </button>
+
+        <button class="ptt" id="ptt" type="button" aria-label="Push to talk. Press and hold to record." aria-pressed="false" aria-describedby="pttHint">
+          <span class="ptt-rings" aria-hidden="true"></span>
+          <svg class="ptt-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <rect x="9" y="3" width="6" height="11" rx="3" stroke="currentColor" stroke-width="1.5"/>
+            <path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3M9 21h6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+          <span class="ptt-label" id="pttLabel">HOLD TO TALK</span>
+          <span class="ptt-timer" id="pttTimer">00:00</span>
+        </button>
+
+        <button class="icon-btn" id="resetBtn" type="button" aria-label="Start a new session and clear the transcript" title="New session">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M20 12a8 8 0 1 1-2.34-5.66" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+            <path d="M20 4v5h-5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
+      </div>
+
+      <div class="hint-row">
+        <button class="type-toggle" id="typeToggle" type="button" aria-expanded="false" aria-controls="composer">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <rect x="2.5" y="5" width="19" height="13" rx="2" stroke="currentColor" stroke-width="1.3"/>
+            <path d="M6 9h7M6 12h4M6 15h5M16 9h2M16 12h2M16 15h2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+          </svg>
+          TYPE INSTEAD
+        </button>
+        <span class="ptt-hint" id="pttHint">SPACE TO TALK</span>
+      </div>
+
+      <form class="composer" id="composer" hidden autocomplete="off">
+        <label class="sr-only" for="textInput">Type a message for JARVIS</label>
+        <input id="textInput" type="text" inputmode="text" enterkeyhint="send" placeholder="Type a command..." maxlength="4000" autocomplete="off" spellcheck="false">
+        <button class="send-btn" id="sendBtn" type="submit" aria-label="Send typed message">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M4 12h15M13 6l6 6-6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
+        <button class="composer-close" id="composerClose" type="button" aria-label="Close text input">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="m7 7 10 10M17 7 7 17" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+          </svg>
+        </button>
+      </form>
+    </footer>
+  </div>
+
+  <noscript><div class="noscript">J.A.R.V.I.S. requires JavaScript.</div></noscript>
+  <script src="jarvis.js?v=omarchy-theme-1"></script>
+</body>
+</html>

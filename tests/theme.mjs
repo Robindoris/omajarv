@@ -1,0 +1,33 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { buildTheme, createThemeReader, parsePalette, themeStyles } from '../server/lib/theme.mjs';
+const home = fs.mkdtempSync(path.join(os.tmpdir(), 'jarvis-theme-test-'));
+const active = path.join(home, '.local/state/omarchy/current/theme');
+try {
+  fs.mkdirSync(active, { recursive: true });
+  const dark = 'background = "#101315"\nforeground = "#cacccc"\naccent = "#6567EC"\nred = "#E28174"\nyellow = "#E2DA74"\n';
+  const light = "mode = 'light'\nbackground = '#fafafa'\nforeground = '#151515'\naccent = '#348' # comment\n";
+  assert.equal(parsePalette('accent = "red; background: url(evil)"').accent, undefined);
+  assert.equal(parsePalette('[other]\naccent = "#ffffff"').accent, undefined);
+  fs.writeFileSync(path.join(active, 'colors.toml'), dark);
+  const read = createThemeReader(home);
+  const first = read();
+  assert.equal(first.palette.core, '#6567EC');
+  assert.equal(first.mode, 'dark');
+  assert.equal(first.css['--core-rgb'], '101, 103, 236');
+  fs.writeFileSync(path.join(active, 'colors.toml'), light);
+  const second = read();
+  assert.equal(second.mode, 'light');
+  assert.equal(second.palette.bg, '#fafafa');
+  assert.equal(second.css['--core-rgb'], '51, 68, 136');
+  assert.notEqual(first.revision, second.revision);
+  fs.writeFileSync(path.join(active, 'colors.toml'), 'background = "#000000"');
+  assert.deepEqual(read(), second, 'Keep last complete theme during partial writes');
+  fs.unlinkSync(path.join(active, 'colors.toml'));
+  assert.deepEqual(read(), second, 'Keep last theme during directory swaps');
+  assert.match(themeStyles(second), /color-scheme: light/);
+  assert.equal(buildTheme({ background: '#ffffff', foreground: '#000000' }).mode, 'light');
+  console.log('PASS: theme parsing, color mapping, dark/light modes, live switches, and transient-file fallback.');
+} finally { fs.rmSync(home, { recursive: true, force: true }); }

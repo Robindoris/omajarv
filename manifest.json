@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "id": "h3man.jarvis",
+  "name": "JARVIS",
+  "version": "1.0.0",
+  "author": "h3man",
+  "license": "MIT",
+  "description": "Native and phone assistant for your Omarchy agent, with opt-in local voice models and theme sync.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "plugin/h3man.jarvis/BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "JARVIS",
+    "description": "Shows whether the local voice bridge is online and opens a QR code that puts the JARVIS push-to-talk interface on your phone.",
+    "category": "AI",
+    "aliases": [
+      "jarvis",
+      "voice",
+      "assistant",
+      "reactor"
+    ],
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "animate": true,
+      "pollSeconds": 20
+    },
+    "schema": [
+      {
+        "key": "animate",
+        "type": "bool",
+        "label": "Animate the reactor",
+        "defaultValue": true
+      },
+      {
+        "key": "pollSeconds",
+        "type": "integer",
+        "label": "Status check interval (seconds)",
+        "min": 5,
+        "max": 300,
+        "step": 5,
+        "defaultValue": 20
+      }
+    ]
+  }
+}

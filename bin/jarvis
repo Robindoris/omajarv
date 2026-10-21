@@ -1,0 +1,288 @@
+#!/bin/bash
+
+# omarchy:summary=Control the local JARVIS voice bridge
+# omarchy:args=[start|stop|restart|status|url|qr|open|toggle|phone|desktop|setup|setup-status|models|uninstall|logs|reset|cert|token|doctor|tailscale-enable|tailscale-status]
+# omarchy:examples=jarvis start | jarvis qr | jarvis open
+
+set -euo pipefail
+umask 077
+
+SELF=$(readlink -f "${BASH_SOURCE[0]}")
+ROOT=$(cd "$(dirname "$SELF")/.." && pwd)
+SERVER="$ROOT/server/jarvis-server.mjs"
+STATE="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy-jarvis"
+CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/omarchy-jarvis/config.json"
+UNIT="omarchy-jarvis.service"
+PIDFILE="$STATE/server.pid"
+LOGFILE="$STATE/server.log"
+
+mkdir -p "$STATE"
+
+port() {
+  local value=""
+  [[ -f $CONFIG ]] && value=$(jq -r '.port // empty' "$CONFIG" 2>/dev/null || true)
+  printf '%s' "${value:-4317}"
+}
+
+token() {
+  local file="$STATE/token"
+  if [[ -s $file ]]; then
+    tr -d '\n' <"$file"
+    return
+  fi
+  local fresh
+  fresh=$(head -c 16 /dev/urandom | base64 | tr '+/' '-_' | tr -d '=\n')
+  printf '%s\n' "$fresh" >"$file"
+  chmod 600 "$file"
+  printf '%s' "$fresh"
+}
+
+lan_ip() {
+  ip route get 1.1.1.1 2>/dev/null |
+    awk '{ for (i = 1; i <= NF; i++) if ($i == "dev") { print $(i + 1); exit } }' |
+    xargs -r -I{} sh -c 'ip -4 -o addr show dev {} | awk "{print \$4}" | cut -d/ -f1'
+}
+
+tunnel_url() {
+  local file="$STATE/tunnel-url"
+  [[ -s $file ]] && tr -d '\n' <"$file" || true
+}
+
+qr_target() {
+  jq -r '.qrTarget // "tunnel"' "$CONFIG" 2>/dev/null || echo tunnel
+}
+
+# `url` (no argument) is what the QR code and the panel use: the public
+# Cloudflare tunnel when one is up, the LAN address otherwise. Pass --lan to
+# force the home-network address.
+url() {
+  local force="${1:-}"
+  if [[ $force == "--tailscale" ]]; then
+    local tsurl
+    tsurl=$(node "$ROOT/server/lib/tailscale.mjs" status | jq -r '.url // empty')
+    [[ -n $tsurl ]] || { echo "Tailscale tunnel is not ready. Open the Tailscale tunnel tab." >&2; return 1; }
+    printf '%s/?k=%s' "$tsurl" "$(token)"
+    return
+  fi
+  local tunnel
+  tunnel=$(tunnel_url)
+  if [[ $force == "--tunnel" && -z $tunnel ]]; then
+    echo "Tunnel is connecting. Try again in a moment." >&2
+    return 1
+  fi
+  if [[ $force != "--lan" && ( $force == "--tunnel" || "$(qr_target)" != "lan" ) && -n $tunnel ]]; then
+    printf '%s/?k=%s' "$tunnel" "$(token)"
+    return
+  fi
+  local host
+  host=$(lan_ip)
+  host=${host:-127.0.0.1}
+  printf 'https://%s:%s/?k=%s' "$host" "$(port)" "$(token)"
+}
+
+local_api() {
+  local endpoint="$1"; shift
+  printf 'header = "X-Jarvis-Token: %s"\n' "$(token)" | curl --config - --silent --show-error --cacert "$STATE/cert.pem" --connect-timeout 1 --max-time 8 "$@" "https://127.0.0.1:$(port)/api/$endpoint" 2>/dev/null
+}
+
+using_systemd() {
+  systemctl --user list-unit-files "$UNIT" &>/dev/null &&
+    systemctl --user cat "$UNIT" &>/dev/null
+}
+
+running() {
+  if using_systemd; then
+    systemctl --user is-active --quiet "$UNIT"
+  else
+    [[ -f $PIDFILE ]] && kill -0 "$(cat "$PIDFILE" 2>/dev/null)" 2>/dev/null
+  fi
+}
+
+cmd_start() {
+  if running; then
+    echo "JARVIS is already running"
+  elif using_systemd; then
+    systemctl --user start "$UNIT"
+  else
+    nohup node "$SERVER" >>"$LOGFILE" 2>&1 &
+    echo $! >"$PIDFILE"
+  fi
+  for _ in $(seq 1 60); do
+    if local_api health 2>/dev/null | grep -q true; then
+      break
+    fi
+    sleep 0.25
+  done
+  echo "JARVIS: $(url)"
+}
+
+cmd_stop() {
+  if using_systemd; then
+    systemctl --user stop "$UNIT" 2>/dev/null || true
+  elif [[ -f $PIDFILE ]]; then
+    kill "$(cat "$PIDFILE")" 2>/dev/null || true
+    rm -f "$PIDFILE"
+  fi
+  echo "JARVIS stopped"
+}
+
+cmd_status() {
+  local healthy=false
+  if local_api health 2>/dev/null | grep -q true; then
+    healthy=true
+  fi
+
+  if [[ ${1:-} == "--json" ]]; then
+    local payload
+    payload=$(local_api status 2>/dev/null || true)
+    if [[ -n $payload ]] && jq -e . >/dev/null 2>&1 <<<"$payload"; then
+      jq -c --argjson running "$healthy" '. + {running: $running}' <<<"$payload"
+    else
+      jq -cn --arg url "$(url)" --argjson running "$healthy" \
+        '{ok:false, running:$running, url:$url, error:"bridge not reachable"}'
+    fi
+    return
+  fi
+
+  if [[ $healthy == true ]]; then
+    echo "JARVIS online"
+  else
+    echo "JARVIS offline"
+  fi
+  if [[ -n $(tunnel_url) ]]; then
+    echo "  tunnel $(tunnel_url)  (cloudflare quick tunnel)"
+    echo "  lan    $(url --lan)"
+  else
+    echo "  url    $(url)"
+  fi
+  if [[ $healthy == true ]]; then
+    local_api status 2>/dev/null |
+      jq -r '"  agent  \(.agent.label) (\(.agent.id))\(if .agent.ready then "" else " MISSING" end)
+  stt    \(.stt.engine) · \(.stt.model)\(if .stt.ready then "" else " MISSING" end)
+  tts    \(.tts.engine) · \(.tts.voice)\(if .tts.ready then "" else " MISSING" end)
+  turns  \(.session.turns)"' 2>/dev/null || true
+  fi
+}
+
+cmd_qr() {
+  local json=false
+  local force=""
+  for arg in "$@"; do
+    case "$arg" in
+      --json) json=true ;;
+      --lan) force="--lan" ;;
+      --tunnel) force="--tunnel" ;;
+      --tailscale) force="--tailscale" ;;
+    esac
+  done
+  local link
+  link=$(url "$force")
+  if $json; then
+    command -v qrencode >/dev/null || {
+      echo '{"ok":false,"error":"qrencode is not installed"}'
+      return 1
+    }
+    # Collapse qrencode's two-character ASCII modules into 0/1 rows. Done in
+    # bash so the panel does not pay for a node (or python) start-up.
+    local ascii row rows=() i
+    ascii=$(qrencode --type ASCII --margin 4 --output - "$link")
+    while IFS= read -r line; do
+      [[ -n $line ]] || continue
+      row=""
+      for ((i = 0; i < ${#line}; i += 2)); do
+        [[ ${line:i:2} == *#* ]] && row+=1 || row+=0
+      done
+      rows+=("$row")
+    done <<<"$ascii"
+    local image
+    image=$(qrencode --type PNG --size 8 --margin 4 --output - "$link" | base64 -w0)
+    printf '%s\n' "${rows[@]}" |
+      jq -Rsc --arg image "$image" --arg url "$link" 'split("\n") | map(select(length > 0)) | {url: $url, size: length, matrix: ., image: ("data:image/png;base64," + $image)}'
+  else
+    echo "$link"
+    qrencode -t ANSIUTF8 "$link"
+  fi
+}
+
+cmd_open() { xdg-open "$(url)" >/dev/null 2>&1 & }
+
+cmd_logs() {
+  if using_systemd; then
+    journalctl --user -u "$UNIT" -f -n "${1:-60}"
+  else
+    tail -n "${1:-60}" -f "$LOGFILE"
+  fi
+}
+
+cmd_reset() {
+  local_api session/reset -X POST >/dev/null
+  echo "Session memory cleared"
+}
+
+# The certificate embeds every local IP, so a new network means a new cert.
+cmd_cert() {
+  rm -f "$STATE/cert.pem" "$STATE/key.pem"
+  if running; then
+    cmd_stop >/dev/null
+    cmd_start
+  else
+    echo "Certificate cleared; it will be regenerated on the next start"
+  fi
+}
+
+cmd_token() {
+  token
+  echo
+}
+
+cmd_doctor() {
+  local ok=true
+  check() {
+    if eval "$2" >/dev/null 2>&1; then
+      printf '  ok    %s\n' "$1"
+    else
+      printf '  MISS  %s\n' "$1"
+      ok=false
+    fi
+  }
+  echo "JARVIS doctor"
+  check "node" "command -v node"
+  check "ffmpeg" "command -v ffmpeg"
+  check "qrencode" "command -v qrencode"
+  check "whisper.cpp" "command -v whisper-cli || command -v whisper-server"
+  check "piper" "command -v piper || command -v piper-tts"
+  check "cloudflared (tunnel)" "command -v cloudflared"
+  check "whisper model" "ls \"$HOME\"/.local/share/omarchy-jarvis/models/whisper/ggml-*.bin"
+  check "piper voice" "ls \"$HOME\"/.local/share/omarchy-jarvis/models/piper/*.onnx"
+  check "agent" "command -v \"\$(cat \"$HOME/.config/omarchy/defaults/agent\" 2>/dev/null || echo codex)\""
+  check "service" "systemctl --user cat $UNIT"
+  $ok && echo "All good." || echo "Some checks failed - run $ROOT/install.sh"
+}
+
+case "${1:-status}" in
+setup) exec bash "$ROOT/install.sh" --no-plugin ;;
+setup-status) exec node "$ROOT/server/setup.mjs" --check ;;
+models) exec node "$ROOT/server/setup.mjs" --models ;;
+uninstall) exec bash "$ROOT/install.sh" --uninstall ;;
+start) cmd_start ;;
+stop) cmd_stop ;;
+restart) cmd_stop; cmd_start ;;
+status) shift || true; cmd_status "${1:-}" ;;
+url) shift || true; url "${1:-}"; echo ;;
+qr) shift || true; cmd_qr "$@" ;;
+open) cmd_open ;;
+tailscale-enable) exec node "$ROOT/server/lib/tailscale.mjs" enable ;;
+tailscale-status) exec node "$ROOT/server/lib/tailscale.mjs" status ;;
+desktop) exec node "$ROOT/server/desktop.mjs" ;;
+toggle) omarchy-shell shell toggle h3man.jarvis ;;
+phone) omarchy-shell h3man.jarvis phone ;;
+logs) shift || true; cmd_logs "${1:-60}" ;;
+reset) cmd_reset ;;
+cert) cmd_cert ;;
+token) cmd_token ;;
+doctor) cmd_doctor ;;
+*)
+  echo "Usage: jarvis <start|stop|restart|status|url|qr|open|toggle|phone|desktop|setup|setup-status|models|uninstall|logs|reset|cert|token|doctor|tailscale-enable|tailscale-status>"
+  exit 1
+  ;;
+esac
