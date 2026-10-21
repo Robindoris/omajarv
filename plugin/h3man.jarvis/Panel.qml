@@ -57,6 +57,7 @@ Ui.Panel {
     if (root.activityActive) { root.activityStarted = Date.now(); root.activitySeconds = 0 }
     else if (root.activityStarted > 0) root.activitySeconds = Math.floor((Date.now() - root.activityStarted) / 1000)
   }
+  property bool confirmReset: false
   property bool readAloud: false
   property var messages: []
   property string streamText: ""
@@ -141,11 +142,12 @@ Ui.Panel {
       if (data.busy && root.working) return
       var signature = JSON.stringify([data.agent, data.messages])
       if (signature !== root.historySignature) {
+        var follow = transcript.atYEnd || root.messages.length === 0
         root.historySignature = signature
         root.historyAgent = data.agent || ""
         root.messages = data.messages || []
         if (!data.busy) root.streamText = ""
-        Qt.callLater(function() { transcript.positionViewAtEnd() })
+        if (follow) Qt.callLater(function() { transcript.positionViewAtEnd() })
       }
     } else if (data.event === "state") {
       root.assistantState = data.state || "Ready"
@@ -155,8 +157,9 @@ Ui.Panel {
       root.messages = root.messages.concat([{ role: "user", text: data.text }])
     } else if (data.event === "token") {
       if (data.text) root.assistantState = "Responding"
+      var followStream = transcript.atYEnd
       root.streamText += data.text || ""
-      Qt.callLater(function() { transcript.positionViewAtEnd() })
+      if (followStream) Qt.callLater(function() { transcript.positionViewAtEnd() })
     } else if (data.event === "done") {
       root.lastOutcome = "Reply complete"
       root.assistantState = "Finishing"
@@ -258,6 +261,8 @@ Ui.Panel {
     }
   }
 
+  Timer { id: resetTimer; interval: 5000; onTriggered: root.confirmReset = false }
+
   Ui.KeyboardPanel {
     id: panel
     anchorItem: root.anchorItem
@@ -265,8 +270,8 @@ Ui.Panel {
     bar: root.bar
     open: root.opened
     focusTarget: root.tab === 0 ? input : keyCatcher
-    contentWidth: panel.fittedContentWidth(Style.space(440))
-    contentHeight: panel.fittedContentHeight(Style.space(620))
+    contentWidth: panel.fittedContentWidth(Style.space(500))
+    contentHeight: panel.fittedContentHeight(Style.space(680))
     Ui.PanelKeyCatcher { id: keyCatcher; anchors.fill: parent; onCloseRequested: root.close() }
     ColumnLayout {
       anchors.fill: parent
@@ -277,7 +282,7 @@ Ui.Panel {
           Layout.fillWidth: true
           spacing: Style.space(3)
           Text { text: "J.A.R.V.I.S."; color: root.fg; font.family: root.fontFamily; font.pixelSize: Style.font.title; font.bold: true; font.letterSpacing: 2 }
-          Text { text: (root.agent.label || "Omarchy agent") + " · " + (root.agent.access || "Agent defaults"); color: Color.muted; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
+          Text { text: root.agent.label || "Omarchy agent"; color: Color.muted; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
         }
         Text { text: !root.statusLoaded ? "Checking" : root.running ? "Online" : "Offline"; color: root.running ? Color.accent : Color.muted; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
       }
@@ -430,18 +435,29 @@ Ui.Panel {
                 font.pixelSize: Style.font.body
               }
             }
+            Ui.Button {
+              anchors.right: parent.right
+              anchors.bottom: parent.bottom
+              visible: !transcript.atYEnd && root.messages.length > 0
+              text: "Jump to latest ↓"; bordered: true; focusable: true
+              onClicked: transcript.positionViewAtEnd()
+            }
             Text { anchors.centerIn: parent; width: parent.width * 0.8; visible: root.messages.length === 0 && !root.streamText && !root.working; text: "What can I help with?\nType below or tap the microphone.\nSuper + Ctrl + J opens JARVIS."; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap; color: Color.muted; font.family: root.fontFamily; font.pixelSize: Style.font.body }
           }
           RowLayout {
             Layout.fillWidth: true
-            Controls.TextField {
+            Controls.TextArea {
               id: input
               Layout.fillWidth: true
-              Layout.preferredHeight: Style.space(36)
+              Layout.preferredHeight: Style.space(76)
               leftPadding: Style.space(10)
               rightPadding: Style.space(10)
-              placeholderText: "Ask your Omarchy agent…"
-              maximumLength: root.status.limits ? root.status.limits.maxTextChars : 4000
+              placeholderText: "Message JARVIS… (Shift+Enter for a new line)"
+              wrapMode: TextEdit.Wrap
+              onTextChanged: {
+                var limit = root.status.limits ? root.status.limits.maxTextChars : 4000
+                if (text.length > limit) text = text.slice(0, limit)
+              }
               color: root.fg
               placeholderTextColor: Color.muted
               font.family: root.fontFamily
@@ -449,7 +465,14 @@ Ui.Panel {
               selectByMouse: true
               enabled: root.running
               background: Rectangle { color: "transparent"; radius: Style.cornerRadius; border.width: 1; border.color: input.activeFocus ? Color.accent : Color.muted }
-              onAccepted: root.send()
+              Keys.onReturnPressed: function(event) {
+                if (!(event.modifiers & Qt.ShiftModifier)) { root.send(); event.accepted = true }
+                else event.accepted = false
+              }
+              Keys.onEnterPressed: function(event) {
+                if (!(event.modifiers & Qt.ShiftModifier)) { root.send(); event.accepted = true }
+                else event.accepted = false
+              }
               Keys.onEscapePressed: root.close()
             }
             Ui.Button {
@@ -485,7 +508,7 @@ Ui.Panel {
           Ui.Button {
               focusable: true
               Keys.onEscapePressed: root.close()
-              Layout.fillWidth: true; text: "New conversation"; bordered: true; enabled: root.running && !root.working && !root.remoteBusy; onClicked: { root.notice = ""; root.lastOutcome = ""; root.command({ action: "reset" }) } }
+              Layout.fillWidth: true; text: root.confirmReset ? "Confirm: clear shared conversation" : "New conversation"; bordered: true; enabled: root.running && !root.working && !root.remoteBusy; onClicked: { if (root.messages.length && !root.confirmReset) { root.confirmReset = true; resetTimer.restart(); return }; root.confirmReset = false; root.notice = ""; root.lastOutcome = ""; root.command({ action: "reset" }) } }
         }
         Flickable {
           id: phoneScroll
@@ -554,6 +577,7 @@ Ui.Panel {
               }
             }
             Text { Layout.fillWidth: true; text: root.qrImage && root.qrForUrl === root.link ? "Ready to scan" : root.qrError ? "QR needs attention" : "Connecting"; horizontalAlignment: Text.AlignHCenter; color: Color.accent; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
+            Text { Layout.fillWidth: true; text: "Your phone and desktop share the same conversation."; color: root.fg; wrapMode: Text.WordWrap; font.family: root.fontFamily; font.pixelSize: Style.font.body }
             Text { Layout.fillWidth: true; text: root.qrTailscale ? "Connect Tailscale on your phone to the same tailnet. Scan once, then choose Add to Home Screen or Install app in your browser. This address survives restarts while the machine name and tailnet stay the same." : root.qrLan ? "Same Wi-Fi only. Accept the local certificate in your phone browser, then allow microphone access." : "Scan with your phone camera, open in your browser, and allow microphone access. The tunnel link changes on restart."; color: Color.muted; wrapMode: Text.WordWrap; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
             Text { Layout.fillWidth: true; text: root.link ? root.link.replace(/\?.*$/, "") : "Waiting for a phone link"; color: Color.muted; elide: Text.ElideMiddle; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
             RowLayout {

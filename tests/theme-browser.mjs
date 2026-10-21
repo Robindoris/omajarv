@@ -21,7 +21,17 @@ const name=url.pathname==='/'?'index.html':url.pathname.slice(1);
 if(name.includes('..')||!fs.existsSync(path.join(root,name))){res.writeHead(404);return res.end();}
 let source=fs.readFileSync(path.join(root,name));
 res.setHeader('content-type',name.endsWith('.html')?'text/html':name.endsWith('.css')?'text/css':'text/javascript');
-if(name==='index.html')source=source.toString().replace('</body>',`<script>setInterval(function(){var s=getComputedStyle(document.documentElement);document.body.dataset.testCore=s.getPropertyValue('--core').trim();document.body.dataset.testBg=getComputedStyle(document.body).backgroundColor;},100);</script></body>`);
+if(name==='index.html')source=source.toString().replace('</body>',`<script>setInterval(function(){var s=getComputedStyle(document.documentElement);document.body.dataset.testCore=s.getPropertyValue('--core').trim();document.body.dataset.testBg=getComputedStyle(document.body).backgroundColor;
+var transcript=document.getElementById('transcript'), composer=document.getElementById('composer');
+document.body.dataset.testComposer=String(!composer.hidden && composer.getBoundingClientRect().bottom <= innerHeight);
+document.body.dataset.testTranscript=String(transcript.getBoundingClientRect().height >= 180);
+if(!document.body.dataset.testViews){
+ document.getElementById('voiceView').click();
+ var voice=document.body.dataset.view==='voice' && document.getElementById('voiceView').getAttribute('aria-pressed')==='true';
+ document.getElementById('chatView').click();
+ document.body.dataset.testViews=String(voice && document.body.dataset.view==='chat' && document.getElementById('chatView').getAttribute('aria-pressed')==='true');
+}
+},100);</script></body>`);
 res.end(source);
 });
 server.listen(0,'127.0.0.1');await once(server,'listening');
@@ -37,5 +47,8 @@ assert.match(dom,/data-test-bg="rgb\(250, 250, 250\)"/);
 assert.match(dom,/data-theme="Light fixture"/);
 assert.match(dom,/<meta name="theme-color" content="#fafafa">/);
 assert.ok(themeReads>=2);
+assert.match(dom,/data-test-composer="true"/, 'Composer should stay visible and inside the phone viewport');
+assert.match(dom,/data-test-transcript="true"/, 'Conversation should have room for readable replies');
+assert.match(dom,/data-test-views="true"/, 'Both view controls should update their selected state');
 console.log('PASS: mobile Chromium applies initial theme and switches an open page to the new palette, including browser chrome.');
 } finally {server.closeAllConnections();server.close();fs.rmSync(profile,{recursive:true,force:true});}

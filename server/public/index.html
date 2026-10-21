@@ -12,10 +12,10 @@
   <meta name="robots" content="noindex, nofollow">
   <title>J.A.R.V.I.S.</title>
   <link rel="apple-touch-icon" href="/icon-192.png">
-  <link rel="stylesheet" href="jarvis.css?v=omarchy-theme-1">
+  <link rel="stylesheet" href="jarvis.css?v=conversation-2">
   <link rel="stylesheet" href="/theme.css">
 </head>
-<body data-state="boot">
+<body data-state="boot" data-view="chat">
   <div class="backdrop" aria-hidden="true">
     <canvas id="dust"></canvas>
     <div class="grid"></div>
@@ -47,6 +47,7 @@
       </div>
     </header>
 
+    <nav class="view-switch" aria-label="Interface view"><button id="chatView" type="button" aria-pressed="true">Conversation</button><button id="voiceView" type="button" aria-pressed="false">Voice</button></nav>
     <main class="stage">
       <div class="reactor-wrap">
         <canvas id="reactor" aria-hidden="true"></canvas>
@@ -64,9 +65,10 @@
 
       <section class="transcript-wrap" aria-label="Conversation transcript">
         <div class="transcript-head">
-          <span>LIVE TRANSCRIPT</span>
+          <span>CONVERSATION</span>
           <span class="transcript-hint" id="transcriptHint">STANDBY</span>
         </div>
+        <button class="latest-btn" id="latestBtn" type="button" hidden>Jump to latest ↓</button>
         <div class="transcript" id="transcript" role="log" aria-live="polite" aria-relevant="additions text" aria-atomic="false"></div>
       </section>
     </main>
@@ -106,12 +108,12 @@
           </svg>
           TYPE INSTEAD
         </button>
-        <span class="ptt-hint" id="pttHint">SPACE TO TALK</span>
+        <span class="ptt-hint" id="pttHint">Tap to record · hold to talk</span>
       </div>
 
-      <form class="composer" id="composer" hidden autocomplete="off">
+      <form class="composer" id="composer" autocomplete="off">
         <label class="sr-only" for="textInput">Type a message for JARVIS</label>
-        <input id="textInput" type="text" inputmode="text" enterkeyhint="send" placeholder="Type a command..." maxlength="4000" autocomplete="off" spellcheck="false">
+        <input id="textInput" type="text" inputmode="text" enterkeyhint="send" placeholder="Message JARVIS…" maxlength="4000" autocomplete="off" spellcheck="false">
         <button class="send-btn" id="sendBtn" type="submit" aria-label="Send typed message">
           <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path d="M4 12h15M13 6l6 6-6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
@@ -127,6 +129,6 @@
   </div>
 
   <noscript><div class="noscript">J.A.R.V.I.S. requires JavaScript.</div></noscript>
-  <script src="jarvis.js?v=omarchy-theme-1"></script>
+  <script src="jarvis.js?v=conversation-2"></script>
 </body>
 </html>

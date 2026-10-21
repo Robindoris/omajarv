@@ -219,6 +219,7 @@
     }
     if (el.ptt) el.ptt.disabled = state === S.BOOT || remoteBusy || !voiceInputReady;
     if (el.typeToggle) el.typeToggle.disabled = state === S.BOOT;
+    if (el.sendBtn) el.sendBtn.disabled = state !== S.IDLE || remoteBusy || online === false;
     if (el.resetBtn) el.resetBtn.disabled = state === S.BOOT || remoteBusy;
   }
 
@@ -475,7 +476,7 @@
       if (el.statusPill) {
         el.statusPill.title = agentName + ' · ' + readiness.join(' · ');
       }
-      if (el.pttHint) el.pttHint.textContent = voiceInputReady ? 'SPACE TO TALK' : 'VOICE SETUP NEEDED · USE TEXT';
+      if (el.pttHint) el.pttHint.textContent = voiceInputReady ? 'Tap to record · hold to talk' : 'VOICE SETUP NEEDED · USE TEXT';
 
       renderPill();
       statusTimer = setTimeout(loadStatus, 15000);
@@ -1697,11 +1698,15 @@
     }
   }
 
-  if (el.resetBtn) el.resetBtn.addEventListener('click', resetSession);
+  if (el.resetBtn) el.resetBtn.addEventListener('click', function () {
+    if (el.transcript.querySelector('.user, .assistant') && !window.confirm('Start a new conversation? This clears the shared conversation on desktop and phone.')) return;
+    resetSession();
+  });
 
+  // Text stays available in both views; this helper only manages keyboard focus.
   function openComposer(open) {
     if (!el.composer) return;
-    el.composer.hidden = !open;
+    el.composer.hidden = false;
     if (el.typeToggle) el.typeToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
     if (open) {
       ensureAudio();
@@ -1729,10 +1734,11 @@
       if (!el.textInput) return;
       var text = el.textInput.value.trim();
       if (!text) { el.textInput.focus(); return; }
-      el.textInput.value = '';
+      if (online === false || remoteBusy || state !== S.IDLE) return;
       openComposer(false);
       ensureAudio();
       startChat(text);
+      el.textInput.value = '';
     });
   }
 
@@ -1742,6 +1748,19 @@
     }
   });
 
+  var latestBtn = $('#latestBtn');
+  if (el.transcript && latestBtn) {
+    el.transcript.addEventListener('scroll', function () { latestBtn.hidden = nearBottom(); });
+    latestBtn.addEventListener('click', function () { scrollTranscript(true); latestBtn.hidden = true; });
+  }
+  function chooseView(view) {
+    el.body.dataset.view = view;
+    $('#chatView').setAttribute('aria-pressed', String(view === 'chat'));
+    $('#voiceView').setAttribute('aria-pressed', String(view === 'voice'));
+  }
+  $('#chatView').addEventListener('click', function () { chooseView('chat'); });
+  $('#voiceView').addEventListener('click', function () { chooseView('voice'); });
+
   function setOnline(value) {
     var changed = online !== value;
     online = value;
@@ -1749,7 +1768,7 @@
       renderPill();
       renderControls();
       if (value === false && el.pttHint) el.pttHint.textContent = 'SERVER OFFLINE';
-      if (value && el.pttHint) el.pttHint.textContent = 'SPACE TO TALK';
+      if (value && el.pttHint) el.pttHint.textContent = 'Tap to record · hold to talk';
     }
   }
 

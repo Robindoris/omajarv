@@ -77,7 +77,7 @@ BarWidget {
 
   Timer {
     interval: Math.max(5, root.pollSeconds) * 1000
-    running: root.animate
+    running: true
     repeat: true
     onTriggered: root.refreshStatus()
   }
@@ -109,7 +109,7 @@ BarWidget {
     text: ""
     tooltipText: {
       var state = root.online ? "online" : "offline"
-      return "JARVIS " + state + (root.agentLabel ? " · " + root.agentLabel : "") + " · click for phone link"
+      return "JARVIS " + state + (root.agentLabel ? " · " + root.agentLabel : "") + " · click to open assistant"
     }
     onPressed: function(mouseButton) {
       if (mouseButton === Qt.LeftButton) root.togglePanel()
@@ -135,7 +135,7 @@ BarWidget {
 
         Timer {
           interval: 50
-          running: root.animate
+          running: root.animate && root.panelItem && root.panelItem.activityActive
           repeat: true
           onTriggered: reactor.phase += 0.09
         }
