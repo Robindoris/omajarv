@@ -7,7 +7,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory="@ROOT@"
+WorkingDirectory=@ROOT@
 ExecStart=@NODE@ "@ROOT@/server/jarvis-server.mjs"
 Environment=PATH=@HOME@/.local/bin:@HOME@/.local/share/mise/shims:/usr/local/bin:/usr/bin
 Environment=NODE_ENV=production

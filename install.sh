@@ -174,7 +174,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory="$ROOT"
+WorkingDirectory=$ROOT
 ExecStart="$NODE_BIN" "$ROOT/server/jarvis-server.mjs"
 Environment=PATH=$HOME/.local/bin:$MISE_SHIMS:/usr/local/bin:/usr/bin
 Environment=NODE_ENV=production
@@ -187,6 +187,9 @@ TimeoutStopSec=8
 [Install]
 WantedBy=default.target
 EOF
+  # WorkingDirectory is a literal path; only ExecStart arguments use quotes.
+  # Reject invalid generated units before asking the user manager to start them.
+  systemd-analyze --user verify "$UNIT"
   systemctl --user daemon-reload
   systemctl --user enable --now omarchy-jarvis.service
   sleep 2
