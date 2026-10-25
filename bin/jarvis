@@ -185,7 +185,7 @@ cmd_qr() {
     # Collapse qrencode's two-character ASCII modules into 0/1 rows. Done in
     # bash so the panel does not pay for a node (or python) start-up.
     local ascii row rows=() i
-    ascii=$(qrencode --type ASCII --margin 4 --output - "$link")
+    ascii=$(printf '%s' "$link" | qrencode --type ASCII --margin 4 --output -)
     while IFS= read -r line; do
       [[ -n $line ]] || continue
       row=""
@@ -195,16 +195,16 @@ cmd_qr() {
       rows+=("$row")
     done <<<"$ascii"
     local image
-    image=$(qrencode --type PNG --size 8 --margin 4 --output - "$link" | base64 -w0)
-    printf '%s\n' "${rows[@]}" |
-      jq -Rsc --arg image "$image" --arg url "$link" 'split("\n") | map(select(length > 0)) | {url: $url, size: length, matrix: ., image: ("data:image/png;base64," + $image)}'
+    image=$(printf '%s' "$link" | qrencode --type PNG --size 8 --margin 4 --output - | base64 -w0)
+    { printf '%s\n%s\n' "$link" "$image"; printf '%s\n' "${rows[@]}"; } |
+      jq -Rsc 'split("\n") | {url: .[0], image: ("data:image/png;base64," + .[1]), matrix: (.[2:] | map(select(length > 0)))} | .size = (.matrix | length)'
   else
     echo "$link"
-    qrencode -t ANSIUTF8 "$link"
+    printf '%s' "$link" | qrencode -t ANSIUTF8
   fi
 }
 
-cmd_open() { xdg-open "$(url)" >/dev/null 2>&1 & }
+cmd_open() { url | node "$ROOT/server/open-link.mjs" >/dev/null 2>&1 & }
 
 cmd_logs() {
   if using_systemd; then

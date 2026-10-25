@@ -182,8 +182,10 @@ Ui.Panel {
   }
   function copyLink() {
     if (!root.link) return
-    copyProc.command = ["sh", "-c", "printf %s \"$1\" | wl-copy", "sh", root.link]
+    copyProc.command = ["wl-copy"]
     copyProc.running = true
+    copyProc.write(root.link)
+    copyProc.closeWriteChannel()
     root.notice = "Phone link copied"
   }
   Timer {
@@ -252,7 +254,7 @@ Ui.Panel {
       root.refresh()
     }
   }
-  Process { id: copyProc }
+  Process { id: copyProc; stdinEnabled: true }
   Timer {
     interval: 2500; running: root.opened; repeat: true
     onTriggered: {

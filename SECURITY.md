@@ -34,3 +34,11 @@ Uninstall with `jarvis uninstall` before removing a marketplace copy; this stops
 disables the user service and removes its launcher. Models, config and local history
 are intentionally retained. Generic removal in the marketplace cannot stop an
 independently installed systemd service. Delete retained data separately if desired.
+
+Local process visibility: phone QR and clipboard helpers receive bearer links on
+stdin. Browser opening uses a private temporary HTML handoff, removed after a
+short delay (an interrupted launcher can leave it in the private temp directory).
+Agent requests are supported only through the verified Codex and Claude stdin
+adapters; other adapters fail closed rather than put requests in process arguments.
+Speech uses whisper-cli even with an older server configuration. Unauthenticated
+localhost whisper-server listeners are never used; install whisper-cli for voice.

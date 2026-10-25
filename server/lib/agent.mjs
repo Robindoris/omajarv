@@ -44,7 +44,7 @@ function binPresent(bin) {
 
 export function agentStatus(config) {
   const id = resolveAgent(config);
-  return { id, label: agentLabel(id), ready: binPresent(id) };
+  return { id, label: agentLabel(id), ready: ["codex", "claude"].includes(id) && binPresent(id) };
 }
 
 function buildPrompt(text, config) {
@@ -52,7 +52,7 @@ function buildPrompt(text, config) {
   return `${config.systemPrompt}\n\nSpoken user request: ${prompt}`;
 }
 
-// Each adapter returns the argv, where the prompt goes (argv or stdin), and a
+// Each supported adapter passes the prompt on stdin and returns a
 // parser that maps one agent JSON event onto zero or more text deltas.
 function adapter(id, { prompt, session, config }) {
   const cwd = config.workDir || paths.root;
@@ -81,23 +81,6 @@ function adapter(id, { prompt, session, config }) {
       };
     }
 
-    case "opencode": {
-      const args = ["run", "--format", "json", ...(config.agentFullAccess ? ["--auto"] : [])];
-      if (session) args.push("--session", session);
-      args.push(prompt);
-      return {
-        cmd: "opencode",
-        args,
-        cwd,
-        stdin: null,
-        parse: (event, emit, setSession) => {
-          if (event.sessionID) setSession(event.sessionID);
-          const part = event.part;
-          if (event.type === "text" && part && typeof part.text === "string") emit(part.text);
-        },
-      };
-    }
-
     case "claude": {
       const args = ["-p", "--output-format", "stream-json", "--verbose", "--include-partial-messages", "--permission-mode", "auto"];
       if (session) args.push("--resume", session);
@@ -120,51 +103,8 @@ function adapter(id, { prompt, session, config }) {
       };
     }
 
-    case "gemini": {
-      return {
-        cmd: "gemini",
-        args: ["-p", prompt, "--output-format", "json"],
-        cwd,
-        stdin: null,
-        parse: () => {},
-        finalText: (state, raw) => {
-          try {
-            const parsed = JSON.parse(raw);
-            return parsed.response || parsed.text || "";
-          } catch {
-            return raw;
-          }
-        },
-      };
-    }
-
-    case "grok": {
-      return { cmd: "grok", args: [...(config.agentFullAccess ? ["--permission-mode", "bypassPermissions"] : []), "--", prompt], cwd, stdin: null, textOut: true };
-    }
-
-    case "cursor-agent": {
-      return { cmd: "cursor-agent", args: [...(config.agentFullAccess ? ["--yolo", "--trust"] : []), "agent", "--", prompt], cwd, stdin: null, textOut: true };
-    }
-
-    case "copilot": {
-      return { cmd: "copilot", args: [...(config.agentFullAccess ? ["--allow-all"] : []), "-p", prompt], cwd, stdin: null, textOut: true };
-    }
-
-    case "crush": {
-      return { cmd: "crush", args: ["run", prompt], cwd, stdin: null, textOut: true };
-    }
-
-    case "omp": {
-      return { cmd: "omp", args: [...(config.agentFullAccess ? ["--auto-approve"] : []), "--", prompt], cwd, stdin: null, textOut: true };
-    }
-
-    case "pi": {
-      return { cmd: "pi", args: [prompt], cwd, stdin: null, textOut: true };
-    }
-
-    default: {
-      return { cmd: id, args: ["--", prompt], cwd, stdin: null, textOut: true };
-    }
+    default:
+      throw new Error(`${agentLabel(id)} is disabled: a private stdin transport has not been verified. Select Codex or Claude.`);
   }
 }
 
