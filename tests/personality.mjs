@@ -40,5 +40,16 @@ try {
   assert.deepEqual(profile.messages(), []);
   assert.equal(profile.answering(), false);
   assert.equal(fs.statSync(path.join(paths.stateDir, 'personality.json')).mode & 0o777, 0o600);
+  const beforeMemory = profile.view();
+  const file = path.join(paths.stateDir, 'personality.json');
+  const external = JSON.parse(fs.readFileSync(file, 'utf8'));
+  external.personality += '\nUse a Jamaican accent.';
+  external.revision += 1;
+  fs.writeFileSync(file, JSON.stringify(external));
+  assert.match(profile.view().personality, /Jamaican accent/);
+  assert.match(profile.prompt(), /Jamaican accent/);
+  assert.throws(() => profile.update(beforeMemory), /changed on another device/);
+  profile.resetTranscript();
+  assert.match(JSON.parse(fs.readFileSync(file, 'utf8')).personality, /Jamaican accent/);
   console.log('PASS: setup gating, ordered onboarding, restart persistence, validation, revisions and reset preservation.');
 } finally { fs.rmSync(home, {recursive:true, force:true}); }

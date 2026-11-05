@@ -18,14 +18,33 @@ export function createPersonality(config) {
   let state = stored || {assistantName:'JARVIS', userName:'',
     personality:config.systemPrompt || defaults.systemPrompt,
     stage:'assistantName', revision:0, messages:[], startedAt:Date.now()};
+  // Agents may append learned preferences directly to the private state file.
+  // Refresh before reads and writes so the UI and prompt share that live state.
+  const refresh = () => {
+    try {
+      const next = JSON.parse(fs.readFileSync(file, 'utf8'));
+      if (typeof next.personality !== 'string' || typeof next.assistantName !== 'string'
+          || typeof next.userName !== 'string' || !Number.isInteger(next.revision)
+          || !Array.isArray(next.messages) || typeof next.stage !== 'string') {
+        throw new Error('Invalid personality state');
+      }
+      state = next;
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw new Error('Unable to read assistant personality settings');
+    }
+  };
   const configured = () => fs.existsSync(paths.configFile);
-  const view = () => ({assistantName:state.assistantName, userName:state.userName,
-    personality:state.personality, stage:configured() ? state.stage : 'pendingSetup', revision:state.revision});
+  const view = () => {
+    refresh();
+    return {assistantName:state.assistantName, userName:state.userName,
+      personality:state.personality, stage:configured() ? state.stage : 'pendingSetup', revision:state.revision};
+  };
   const persist = next => {
     writePrivateFile(file, JSON.stringify(next));
     state = next;
   };
   const checkRevision = revision => {
+    refresh();
     if (revision !== state.revision) {
       const error = new Error('Assistant settings changed on another device. Refresh and try again.');
       error.status = 409;
@@ -44,11 +63,12 @@ export function createPersonality(config) {
     view,
     summary() { const {personality, ...summary} = view(); return summary; },
     messages() {
+      refresh();
       if (!configured()) return [];
       return state.messages.length ? state.messages : questions[state.stage]
         ? [{role:'assistant', text:questions[state.stage], at:state.startedAt || 0}] : [];
     },
-    answering() { return configured() && !!questions[state.stage]; },
+    answering() { refresh(); return configured() && !!questions[state.stage]; },
     answer(text, revision) {
       checkRevision(revision);
       const stage = state.stage;
@@ -67,8 +87,9 @@ export function createPersonality(config) {
       persist({...state, assistantName, personality, userName, stage:'complete', revision:state.revision + 1});
       return view();
     },
-    resetTranscript() { persist({...state, messages:[]}); },
+    resetTranscript() { refresh(); persist({...state, messages:[]}); },
     prompt() {
+      refresh();
       return `Your name is ${state.assistantName}. The user's preferred name is ${state.userName || 'not yet provided'}.\n\n${state.personality}`;
     },
   };
