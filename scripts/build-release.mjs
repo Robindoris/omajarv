@@ -8,7 +8,7 @@ const output=path.resolve(process.argv[2] || path.join(root,'dist/omarchy-jarvis
 if(output===root || root.startsWith(output+path.sep)) throw new Error('Unsafe output directory');
 if(fs.existsSync(output) && fs.readdirSync(output).length) throw new Error('Output directory must be empty; existing files were kept');
 const fixed=['manifest.json','README.md','LICENSE','SECURITY.md','PRIVACY.md','install.sh','.gitignore'];
-const directories=['bin','server','plugin','docs','scripts','tests','systemd'];
+const directories=['bin','server','plugin','docs','scripts','tests','systemd','skills'];
 const allowed=file=>/\.(?:mjs|qml|js|css|html|md|template)$/.test(file) || ['jarvis','manifest.json','icon-192.png','icon-512.png'].includes(path.basename(file));
 const files=[...fixed];
 function visit(dir){for(const entry of fs.readdirSync(path.join(root,dir),{withFileTypes:true})){

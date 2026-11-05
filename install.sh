@@ -95,6 +95,11 @@ fi
 
 mkdir -p "$STATE_DIR" "$CONFIG_DIR" "$DATA_DIR" "$WHISPER_DIR" "$PIPER_DIR" "$BIN_DIR" "$UNIT_DIR"
 
+# ------------------------------------------------------------ shared skill
+
+say "Installing the shared JARVIS development skill"
+node "$ROOT/scripts/install-skill.mjs"
+
 # ---------------------------------------------------------------- packages
 
 if $do_packages; then

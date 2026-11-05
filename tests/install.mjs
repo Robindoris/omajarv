@@ -13,10 +13,14 @@ try {
  // Exercise actual unit generation from a checkout whose path contains spaces.
  // systemctl stays mocked so this cannot start or stop the real user service.
  const source=path.join(home,'source with spaces');fs.mkdirSync(source);
- for(const name of ['install.sh','bin','server'])fs.cpSync(path.join(root,name),path.join(source,name),{recursive:true});
+ for(const name of ['install.sh','bin','server','scripts','skills'])fs.cpSync(path.join(root,name),path.join(source,name),{recursive:true});
  const args=[path.join(source,'install.sh'),'--no-packages','--no-models','--no-plugin'];
  const install=()=>spawnSync('bash',args,{env,encoding:'utf8',timeout:30000});
  const first=install();assert.equal(first.status,0,first.stderr);
+ const skill=path.join(home,'.agents/skills/omajarv-dev');
+ assert.ok(fs.existsSync(path.join(skill,'SKILL.md')));
+ assert.equal(fs.lstatSync(skill).isSymbolicLink(),false);
+ assert.ok(fs.existsSync(path.join(skill,'conversation.md')));
  const unit=path.join(home,'.config/systemd/user/omarchy-jarvis.service');
  const verification=spawnSync('systemd-analyze',['--user','verify',unit],{env,encoding:'utf8',timeout:10000});
  assert.equal(verification.status,0,verification.stderr);
@@ -29,7 +33,22 @@ try {
  config.stt.modelPath='/existing/local-model.bin';config.codexFullAccess=true;
  fs.writeFileSync(file,JSON.stringify(config));const before=fs.readFileSync(file,'utf8');
  const again=install();assert.equal(again.status,0,again.stderr);assert.equal(fs.readFileSync(file,'utf8'),before);
+ // Customized skills survive updates in a backup; linked targets are untouched.
+ fs.appendFileSync(path.join(skill,'SKILL.md'),'\nPersonal skill customization fixture.\n');
+ const customized=install();assert.equal(customized.status,0,customized.stderr);
+ const backups=path.join(home,'.local/state/omarchy-jarvis/skill-backups');
+ const backupFiles=fs.readdirSync(backups);
+ assert.equal(backupFiles.length,1);
+ assert.match(fs.readFileSync(path.join(backups,backupFiles[0],'omajarv-dev/SKILL.md'),'utf8'),/Personal skill customization fixture/);
+ const unchanged=install();assert.equal(unchanged.status,0,unchanged.stderr);
+ assert.equal(fs.readdirSync(backups).length,1,'Identical reruns must not create backups');
+ const foreign=path.join(home,'foreign-skill');fs.mkdirSync(foreign);fs.writeFileSync(path.join(foreign,'SKILL.md'),'foreign fixture');
+ fs.rmSync(skill,{recursive:true});fs.symlinkSync(foreign,skill);
+ const linked=install();assert.equal(linked.status,0,linked.stderr);
+ assert.equal(fs.readFileSync(path.join(foreign,'SKILL.md'),'utf8'),'foreign fixture');
+ assert.equal(fs.lstatSync(skill).isSymbolicLink(),false);
  const uninstall=spawnSync('bash',[path.join(source,'install.sh'),'--uninstall'],{env,encoding:'utf8',timeout:30000});
  assert.equal(uninstall.status,0,uninstall.stderr);assert.equal(fs.existsSync(path.join(home,'.local/bin/jarvis')),false);assert.equal(fs.readFileSync(file,'utf8'),before);
+ assert.ok(fs.existsSync(path.join(skill,'SKILL.md')),'Uninstall preserves shared skill');
  console.log('PASS: generated systemd unit validates with spaces in source path; private defaults, config preservation and isolated uninstall pass.');
 } finally {fs.rmSync(home,{recursive:true,force:true});}

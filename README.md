@@ -35,6 +35,11 @@ bash install.sh
 
 Keep this clone: the installer points the `jarvis` command and user service at it.
 It also installs the bar plugin under `~/.config/omarchy/plugins/h3man.jarvis/`.
+The installer also copies the bundled development skill to
+`~/.agents/skills/omajarv-dev/` for the installing user. Setup from the marketplace
+installs the same skill. Installer reruns refresh it and back up differing existing
+content under `~/.local/state/omarchy-jarvis/skill-backups/`; uninstall keeps it.
+Agents may need a skill reload or a new session to discover it.
 The plugin ID remains `h3man.jarvis`; the command is `jarvis`.
 
 The installer walks through:
