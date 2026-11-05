@@ -64,6 +64,8 @@ function adapter(id, { prompt, session, config }) {
       // A private server also keeps Stop scoped to this child process tree.
       const args = ["run", "--standalone", "--format", "json"];
       if (session) args.push("--session", session);
+      const chosen = config.agentModels?.[id];
+      if (chosen) args.push("--model", chosen);
       if (config.agentFullAccess === true) args.push("--auto");
       return {
         cmd: "opencode", args, cwd, stdin: prompt, requireSuccess: true,

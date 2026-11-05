@@ -91,6 +91,10 @@ if (id === 'hermes') {
     if (id === 'opencode') {
       assert.ok(invocation.args.includes(result.session));
       assert.ok(invocation.args.includes('--auto'));
+      await runAgent({config:{...config, agentModels:{opencode:'opencode/glm-5.3-flash-free'}}, text:'modelled request'});
+      invocation = JSON.parse(fs.readFileSync(path.join(home, 'invocation')));
+      const modelFlag = invocation.args.indexOf('--model');
+      assert.ok(modelFlag >= 0 && invocation.args[modelFlag + 1] === 'opencode/glm-5.3-flash-free');
     } else {
       assert.ok(invocation.log.some(msg => msg.method === 'session/load' && msg.params.sessionId === result.session));
       for (const full of [false, true]) {

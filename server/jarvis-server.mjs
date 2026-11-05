@@ -14,7 +14,7 @@ import http from "node:http";
 import https from "node:https";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import { ensureDirs, loadConfig, paths, readToken, VERSION } from "./lib/config.mjs";
+import { ensureDirs, loadConfig, paths, readToken, writeConfig, VERSION } from "./lib/config.mjs";
 import { hostname, lanAddresses, publicUrl, urlFor } from "./lib/net.mjs";
 import { tailscaleStatus, disableTailscale } from "./lib/tailscale.mjs";
 import { listenServeSocket } from "./lib/serve-socket.mjs";
@@ -22,6 +22,7 @@ import { startTunnel, stopTunnel, tunnelStatus } from "./lib/tunnel.mjs";
 import { transcribe, sttStatus, stopWhisperServer, ensureWhisperServer } from "./lib/stt.mjs";
 import { synthesize, ttsStatus } from "./lib/tts.mjs";
 import { agentStatus, forgetSessions, rememberedSession, rememberSession, runAgent } from "./lib/agent.mjs";
+import { listModels, modelAvailable, modelSelectable } from "./lib/agent-models.mjs";
 
 import { historyFor, appendHistory, clearHistory } from "./lib/history.mjs";
 import { createPersonality } from "./lib/personality.mjs";
@@ -182,7 +183,7 @@ async function statusPayload() {
     tunnel,
     tailscale,
     tailscaleUrl: tailscale.url ? `${tailscale.url}/?k=${encodeURIComponent(token)}` : "",
-    agent: { ...agent, access: (agent.id === "codex" ? config.codexFullAccess : config.agentFullAccess) ? "Full access" : "Agent defaults" },
+    agent: { ...agent, access: (agent.id === "codex" ? config.codexFullAccess : config.agentFullAccess) ? "Full access" : "Agent defaults", model: (config.agentModels && config.agentModels[agent.id]) || "", modelSelectable: modelSelectable(agent.id) },
     chatBusy,
     stt: sttStatus(config),
     tts: ttsStatus(config),
@@ -228,6 +229,32 @@ async function handleApi(req, res, pathname, params) {
       forgetSessions();
       return sendJson(res, 200, profile);
     } catch (error) { return sendJson(res, error.status || 400, {error:error.status ? error.message : 'Invalid settings request or unable to save settings.'}); }
+  }
+
+  // Model ids only; nothing here exposes credentials or provider keys.
+  if (pathname === "/api/models" && req.method === "GET") {
+    const agent = agentStatus(config);
+    return sendJson(res, 200, await listModels(agent.id, config));
+  }
+  if (pathname === "/api/agent/model" && req.method === "POST") {
+    const agent = agentStatus(config);
+    if (chatBusy) return sendJson(res, 409, { error: "Stop the current reply before changing the agent model." });
+    let model = "";
+    try {
+      const payload = JSON.parse((await readBody(req, 512)).toString() || "{}");
+      model = typeof payload.model === "string" ? payload.model.trim() : "";
+    } catch { return sendJson(res, 400, { error: "Invalid model request." }); }
+    if (model && (model.length > 200 || !model.includes("/"))) return sendJson(res, 400, { error: "Invalid model request." });
+    if (model && !modelSelectable(agent.id)) return sendJson(res, 400, { error: "This agent does not offer a model choice." });
+    if (model && modelSelectable(agent.id)) {
+      const ok = agent.id === "opencode" && (await modelAvailable(agent.id, config, model).catch(() => false));
+      if (!ok) return sendJson(res, 400, { error: "That model is not in this agent's current list." });
+    }
+    if (!config.agentModels || typeof config.agentModels !== "object") config.agentModels = {};
+    config.agentModels[agent.id] = model;
+    writeConfig(config);
+    log(`agent model: ${agent.id} ${model ? "-> " + model : "(agent default)"}`);
+    return sendJson(res, 200, await listModels(agent.id, config));
   }
 
   if (pathname === "/api/history" && req.method === "GET") {

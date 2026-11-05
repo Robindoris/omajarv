@@ -67,6 +67,7 @@ export const defaults = {
     speed: 1.0,
   },
   agentArgs: {},
+  agentModels: {},
 };
 
 function deepMerge(base, extra) {
@@ -106,6 +107,13 @@ export function writeDefaultConfig(force = false) {
   if (fs.existsSync(paths.configFile) && !force) return false;
   writePrivateFile(paths.configFile, JSON.stringify(defaults, null, 2) + "\n");
   return true;
+}
+
+// Persist a full (loaded) config object. Callers pass the same object the
+// server keeps in memory so disk and runtime stay in step.
+export function writeConfig(config) {
+  ensureDirs();
+  writePrivateFile(paths.configFile, JSON.stringify(config, null, 2) + "\n");
 }
 
 export function readToken() {

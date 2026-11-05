@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import qs.Commons
+import qs.Commons as OmarchyCommons
 import qs.Ui
 
 // JARVIS bar widget: a small arc reactor that reports bridge health and opens
@@ -21,7 +22,7 @@ BarWidget {
     var home = Quickshell.env("HOME") || ""
     return home ? home + "/.local/bin/jarvis" : "jarvis"
   }
-  readonly property color tint: online ? Color.accent : (bar ? bar.foreground : Color.foreground)
+  readonly property color tint: online ? OmarchyCommons.Color.accent : (bar ? bar.foreground : OmarchyCommons.Color.foreground)
 
   readonly property bool opened: panelItem ? panelItem.opened === true : false
   readonly property bool popoutSwitchClosing: panelItem ? panelItem.popoutSwitchClosing === true : false
@@ -77,7 +78,7 @@ BarWidget {
 
   Timer {
     interval: Math.max(5, root.pollSeconds) * 1000
-    running: true
+    running: root.animate
     repeat: true
     onTriggered: root.refreshStatus()
   }
@@ -109,7 +110,7 @@ BarWidget {
     text: ""
     tooltipText: {
       var state = root.online ? "online" : "offline"
-      return "JARVIS " + state + (root.agentLabel ? " · " + root.agentLabel : "") + " · click to open assistant"
+      return "JARVIS " + state + (root.agentLabel ? " · " + root.agentLabel : "") + " · click for phone link"
     }
     onPressed: function(mouseButton) {
       if (mouseButton === Qt.LeftButton) root.togglePanel()
@@ -119,7 +120,10 @@ BarWidget {
     iconComponent: Component {
       Canvas {
         id: reactor
-        anchors.fill: parent
+        // The icon loader measures its content before assigning a size.
+        // Anchoring to that loader produces an empty canvas on Omarchy 4.5.
+        width: Style.bar.iconCanvas
+        height: width
         antialiasing: true
         opacity: root.online ? 1.0 : 0.55
         property real phase: 0
@@ -131,11 +135,12 @@ BarWidget {
         Component.onCompleted: requestPaint()
         onPhaseChanged: requestPaint()
         onWidthChanged: requestPaint()
+        onHeightChanged: requestPaint()
         onStrokeColorChanged: requestPaint()
 
         Timer {
           interval: 50
-          running: root.animate && root.panelItem && root.panelItem.activityActive
+          running: root.animate
           repeat: true
           onTriggered: reactor.phase += 0.09
         }

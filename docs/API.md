@@ -62,6 +62,35 @@ run locally without invoking an agent. The `done.profile` object also omits the
 prompt. Conversation reset preserves personality. Agent errors contain
 application-authored messages, not raw provider/tool stderr.
 
+## `GET /api/models` and `POST /api/agent/model`
+
+Both endpoints require the normal bearer token. They let the user pick which
+model the coding agent uses. Only model identifiers travel across the API —
+never provider keys.
+
+`GET /api/models` maps over the active agent:
+
+```json
+{ "ok": true, "agent": "opencode", "listed": true, "models": [
+  { "id": "opencode/glm-5.3-flash-free", "free": true, "selected": false },
+  { "id": "openai/gpt-5.6-cyber", "free": false, "selected": true }
+], "note": "" }
+```
+
+OpenCode lists its models via `opencode models` (cached 15 minutes), free ids
+first. Hermes does not expose a scriptable list (`listed: false` plus a `note`
+pointing at `hermes model`). Agents without model choice return `listed: false`
+and no note.
+
+`POST /api/agent/model` takes `{ "model": "provider/model" }` — or
+`{ "model": "" }` to return the agent to its own default. An empty model pins
+nothing; the agent's provider default stays in control. The chosen id must be in
+the current listing (400 otherwise); invalid requests return 400 and an active
+chat returns 409. The choice is stored per agent (config `agentModels`), applies
+to the next request (`--model` for OpenCode), and is reflected in `agent.model`
+plus `agent.modelSelectable` in `GET /api/status`. The response is the refreshed
+`GET /api/models` payload.
+
 ## `POST /api/stt`
 
 Raw audio body (`Content-Type: audio/webm`, `audio/ogg`, `audio/wav` or

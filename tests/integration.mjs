@@ -57,10 +57,10 @@ const req=https.request({hostname:'127.0.0.1',servername:'localhost',port,path:e
 try {
 for(let i=0;i<100&&!logs.includes('listening on');i++)await new Promise(r=>setTimeout(r,50));
 assert.match(logs,/listening on/);
-for(const endpoint of ['/api/status','/api/theme','/api/health','/api/personality','/api/history','/api/sudo/pending']){
+for(const endpoint of ['/api/status','/api/theme','/api/health','/api/personality','/api/history','/api/sudo/pending','/api/models']){
  assert.equal((await api(endpoint,undefined,false)).status,401,endpoint);
 }
-for(const endpoint of ['/api/chat','/api/chat/stop','/api/session/reset','/api/personality','/api/stt','/api/tts','/api/sudo/reply']){
+for(const endpoint of ['/api/chat','/api/chat/stop','/api/session/reset','/api/personality','/api/stt','/api/tts','/api/sudo/reply','/api/agent/model']){
  assert.equal((await api(endpoint,{},false)).status,401,endpoint);
 }
 const privateHeaders=(await api('/api/history')).headers;
@@ -128,6 +128,13 @@ assert.match(fs.readFileSync(path.join(home,'agent-prompt'),'utf8'),/Alex/);
 assert.match(fs.readFileSync(path.join(home,'agent-prompt'),'utf8'),/answer in Slovak/);
 assert.equal(JSON.parse((await api('/api/history')).text).messages.length,2);
 assert.equal(JSON.parse((await api('/api/status')).text).agent.access,'Full access');
+assert.equal(JSON.parse((await api('/api/status')).text).agent.modelSelectable,false);
+const modelListing=JSON.parse((await api('/api/models')).text);
+assert.equal(modelListing.listed,false);
+assert.deepEqual(modelListing.models,[]);
+assert.equal((await api('/api/agent/model',{model:'openai/never-model'})).status,400);
+const clearedModel=JSON.parse((await api('/api/agent/model',{model:''})).text);
+assert.equal(clearedModel.ok,true);
 const exit=once(server,'exit');server.kill('SIGTERM');await exit;
 server=spawn(process.execPath,[path.join(root,'server/jarvis-server.mjs')],{env,stdio:['ignore','pipe','pipe']});logs='';server.stdout.on('data',b=>logs+=b);server.stderr.on('data',b=>logs+=b);
 for(let i=0;i<100&&!logs.includes('listening on');i++)await new Promise(r=>setTimeout(r,50));

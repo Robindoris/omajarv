@@ -13,6 +13,7 @@ const token = readToken();
 const emit = (event, data = {}) => process.stdout.write(JSON.stringify({ event, ...data }) + '\n');
 let operation = false, recording = null, playback = null, recordTimer = null, generation = 0;
 let readAloud = false;
+let modelLookup = null;
 let profileRevision;
 const requests = new Set();
 const temp = fs.mkdtempSync(path.join(paths.tmp, 'desktop-'));
@@ -116,6 +117,20 @@ async function dispatch(data) {
     const profile = JSON.parse(await request('personality', JSON.stringify(data.profile)));
     emit('personality', {profile, saved:true});
     return snapshot();
+  }
+  if (data.action === 'models') {
+    // Metadata must not take the chat/recording lock or change activity state.
+    if (!modelLookup) modelLookup = request('models')
+      .then(listing => emit('models', JSON.parse(listing)))
+      .finally(() => { modelLookup = null; });
+    return modelLookup;
+  }
+  if (data.action === 'setModel') {
+    if (operation || recording) throw new Error('Stop the current request before changing the model.');
+    return perform(async () => {
+      const listing = JSON.parse(await request('agent/model', JSON.stringify({model: String(data.model || '')})));
+      emit('models', listing);
+    });
   }
   if (data.action === 'history') return snapshot();
   if (data.action === 'readAloud') { readAloud = data.enabled === true; if (!readAloud) playback?.kill('SIGTERM'); return; }

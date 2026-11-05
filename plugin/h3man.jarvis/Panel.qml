@@ -5,6 +5,7 @@ import QtQuick.Controls as Controls
 import Quickshell
 import Quickshell.Io
 import qs.Commons
+import qs.Commons as OmarchyCommons
 import qs.Ui as Ui
 
 Ui.Panel {
@@ -66,6 +67,8 @@ Ui.Panel {
   property string historySignature: ""
   property var profile: ({ assistantName: "JARVIS", userName: "" })
   property bool savingPersonality: false
+  property var modelListing: ({ id: "", listed: false, models: [] })
+  property string modelBusy: ""
   Controls.Popup {
     id: personalityEditor
     property int revision: 0
@@ -75,7 +78,7 @@ Ui.Panel {
     height: Math.min(panelContent.height - Style.space(16), Style.space(520))
     modal: true
     padding: Style.space(16)
-    background: Rectangle { color: Color.background; border.color: Color.accent; radius: Style.cornerRadius }
+    background: Rectangle { color: OmarchyCommons.Color.background; border.color: OmarchyCommons.Color.accent; radius: Style.cornerRadius }
     contentItem: Controls.ScrollView {
       clip: true
       contentWidth: availableWidth
@@ -86,7 +89,7 @@ Ui.Panel {
         Text { textFormat: Text.PlainText; text: "Assistant name"; color: root.fg; font.family: root.fontFamily }
         Controls.TextField {
           id: assistantNameField; Layout.fillWidth: true; maximumLength: 80; color: root.fg; selectByMouse: true; Accessible.name: "Assistant name"
-          background: Rectangle { color: "transparent"; border.color: Color.muted; radius: Style.cornerRadius }
+          background: Rectangle { color: "transparent"; border.color: OmarchyCommons.Color.muted; radius: Style.cornerRadius }
         }
         Text { textFormat: Text.PlainText; text: "Personality prompt"; color: root.fg; font.family: root.fontFamily }
         Controls.TextArea {
@@ -98,16 +101,16 @@ Ui.Panel {
           selectByMouse: true
           textFormat: TextEdit.PlainText
           onTextChanged: { if (text.length > 8000) text = text.slice(0, 8000) }
-          background: Rectangle { color: "transparent"; border.color: Color.muted; radius: Style.cornerRadius }
+          background: Rectangle { color: "transparent"; border.color: OmarchyCommons.Color.muted; radius: Style.cornerRadius }
           Accessible.name: "Personality prompt"
         }
         Text { textFormat: Text.PlainText; text: "Your name"; color: root.fg; font.family: root.fontFamily }
         Controls.TextField {
           id: userNameField; Layout.fillWidth: true; maximumLength: 80; color: root.fg; selectByMouse: true; Accessible.name: "Your name"
-          background: Rectangle { color: "transparent"; border.color: Color.muted; radius: Style.cornerRadius }
+          background: Rectangle { color: "transparent"; border.color: OmarchyCommons.Color.muted; radius: Style.cornerRadius }
         }
-        Text { textFormat: Text.PlainText; Layout.fillWidth: true; text: "Applies to desktop and phone on your next request."; wrapMode: Text.WordWrap; color: Color.muted; font.family: root.fontFamily }
-        Text { textFormat: Text.PlainText; Layout.fillWidth: true; visible: root.notice !== ""; text: root.notice; wrapMode: Text.WordWrap; color: Color.urgent; font.family: root.fontFamily }
+        Text { textFormat: Text.PlainText; Layout.fillWidth: true; text: "Applies to desktop and phone on your next request."; wrapMode: Text.WordWrap; color: OmarchyCommons.Color.muted; font.family: root.fontFamily }
+        Text { textFormat: Text.PlainText; Layout.fillWidth: true; visible: root.notice !== ""; text: root.notice; wrapMode: Text.WordWrap; color: OmarchyCommons.Color.urgent; font.family: root.fontFamily }
         RowLayout {
           Layout.fillWidth: true
           Ui.Button { text: "Cancel"; bordered: true; enabled: !root.savingPersonality; onClicked: personalityEditor.close() }
@@ -125,12 +128,14 @@ Ui.Panel {
     }
   }
   readonly property var agent: status.agent || ({})
+  readonly property bool agentModelPickable: agent.modelSelectable === true && modelListing.listed === true
+  readonly property bool modelRowVisible: agent.modelSelectable === true && modelListing.agent === agent.id && (modelListing.listed === true || (modelListing.note || "") !== "")
   readonly property var tunnel: status.tunnel || ({})
   readonly property bool running: status.running === true
   readonly property bool working: assistantState !== "Ready"
   readonly property bool tunnelUp: tunnel.state === "up" && !!tunnel.url
   readonly property string link: qrTailscale ? String(status.tailscaleUrl || "") : qrLan ? String(status.lanUrl || "") : String(status.tunnelUrl || "")
-  readonly property color fg: bar ? bar.foreground : Color.foreground
+  readonly property color fg: bar ? bar.foreground : OmarchyCommons.Color.foreground
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
   readonly property string jarvisBin: (Quickshell.env("HOME") || "") + "/.local/bin/jarvis"
 
@@ -139,7 +144,7 @@ Ui.Panel {
     root.refresh()
     if (!setupProc.running) setupProc.running = true
     if (!desktop.running) desktop.running = true
-    else root.command({ action: "history" })
+    else { root.command({ action: "history" }); root.command({ action: "models" }) }
     Qt.callLater(function() { if (root.tab === 0) input.forceActiveFocus() })
   }
   function close() {
@@ -157,6 +162,7 @@ Ui.Panel {
   function applyStatus(payload) {
     root.status = payload || ({})
     root.statusLoaded = true
+    if (root.agent.modelSelectable === true && root.modelListing.agent !== root.agent.id) root.command({ action: "models" })
     if (!root.running) { root.qrImage = ""; root.qrForUrl = ""; return }
     if (root.opened && root.link && root.qrForUrl !== root.link) root.loadQr()
   }
@@ -198,6 +204,7 @@ Ui.Panel {
     if (data.event === "ready") {
       root.command({ action: "readAloud", enabled: root.readAloud })
       root.command({ action: "history" })
+      root.command({ action: "models" })
     } else if (data.event === "history") {
       if (data.profile) root.profile = data.profile
       root.remoteBusy = data.busy === true
@@ -223,6 +230,13 @@ Ui.Panel {
         root.notice = ""
         personalityEditor.open()
       }
+    } else if (data.event === "models") {
+      root.modelListing = data && typeof data === "object" ? data : ({ id: "", listed: false, models: [] })
+      root.modelBusy = ""
+      var selected = ""
+      for (var m = 0; m < (root.modelListing.models || []).length; m++) { if (root.modelListing.models[m].selected) { selected = root.modelListing.models[m].id; break } }
+      var snapshot = root.status
+      if (snapshot.agent && snapshot.agent.modelSelectable) { snapshot.agent.model = selected; root.status = snapshot }
     } else if (data.event === "state") {
       root.assistantState = data.state || "Ready"
       if (root.assistantState === "Thinking" || root.assistantState === "Listening" || root.assistantState === "Transcribing") root.lastOutcome = ""
@@ -240,9 +254,25 @@ Ui.Panel {
       root.streamText = data.text || root.streamText
     } else if (data.event === "error") {
       root.savingPersonality = false
+      root.modelBusy = ""
       root.notice = data.error || "Assistant failed"
       root.lastOutcome = /stop|abort|cancel/i.test(root.notice) ? "Stopped" : "Failed"
     }
+  }
+  function modelOptions() {
+    var found = [{ value: "", label: "Agent default" }]
+    var list = root.modelListing.models || []
+    for (var i = 0; i < list.length; i++) {
+      var entry = list[i]
+      found.push({ value: entry.id, label: entry.free ? entry.id + " (free)" : entry.id, description: entry.free ? "free" : "" })
+    }
+    return found
+  }
+  function chooseModel(value) {
+    var current = (root.modelListing.models || []).some(function(m) { return m.selected && m.id === value })
+    if (current) return
+    root.modelBusy = "Saving model"
+    root.command({ action: "setModel", model: value })
   }
   function launchSetup() {
     Quickshell.execDetached(["omarchy-launch-terminal", "bash", "-c",
@@ -350,7 +380,7 @@ Ui.Panel {
     focusTarget: root.tab === 0 ? input : keyCatcher
     contentWidth: panel.fittedContentWidth(Style.space(500))
     contentHeight: panel.fittedContentHeight(Style.space(680))
-    Ui.PanelKeyCatcher { id: keyCatcher; anchors.fill: parent; onCloseRequested: root.close() }
+    Ui.PanelKeyCatcher { id: keyCatcher; anchors.fill: parent; blocked: modelPicker.popupOpen; onCloseRequested: root.close() }
     ColumnLayout {
       id: panelContent
       anchors.fill: parent
@@ -361,10 +391,10 @@ Ui.Panel {
           Layout.fillWidth: true
           spacing: Style.space(3)
           Text { textFormat: Text.PlainText; text: root.profile.assistantName || "JARVIS"; color: root.fg; font.family: root.fontFamily; font.pixelSize: Style.font.title; font.bold: true; font.letterSpacing: 2; Layout.fillWidth: true; elide: Text.ElideRight }
-          Text { textFormat: Text.PlainText; text: root.agent.label || "Omarchy agent"; color: Color.muted; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
+          Text { textFormat: Text.PlainText; text: root.agent.label || "Omarchy agent"; color: OmarchyCommons.Color.muted; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
         }
         Ui.Button { text: "Personality"; bordered: true; focusable: true; enabled: root.running; onClicked: root.command({action: "personality"}) }
-        Text { textFormat: Text.PlainText; text: !root.statusLoaded ? "Checking" : root.running ? "Online" : "Offline"; color: root.running ? Color.accent : Color.muted; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
+        Text { textFormat: Text.PlainText; text: !root.statusLoaded ? "Checking" : root.running ? "Online" : "Offline"; color: root.running ? OmarchyCommons.Color.accent : OmarchyCommons.Color.muted; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
       }
       RowLayout {
         Layout.fillWidth: true
@@ -378,6 +408,24 @@ Ui.Panel {
               Layout.fillWidth: true; text: "Phone"; selected: root.tab === 1; bordered: true; onClicked: { root.tab = 1; root.qrImage = ""; root.qrForUrl = ""; root.refresh(); root.loadQr() } }
       }
       Ui.PanelSeparator { Layout.fillWidth: true }
+      RowLayout {
+        Layout.fillWidth: true
+        visible: root.modelRowVisible
+        spacing: Style.space(8)
+        Text { textFormat: Text.PlainText; text: "Model"; color: OmarchyCommons.Color.muted; font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true }
+        Ui.SearchableDropdown {
+          id: modelPicker
+          visible: root.agentModelPickable
+          Layout.fillWidth: true
+          showLabel: false
+          value: root.agent.model || ""
+          triggerLabel: root.agent.model ? root.agent.model : "Agent default"
+          options: root.modelOptions()
+          onChanged: function(value) { root.chooseModel(String(value)) }
+        }
+        Text { textFormat: Text.PlainText; visible: root.modelBusy !== "" && root.agentModelPickable; text: root.modelBusy; color: OmarchyCommons.Color.muted; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
+        Text { textFormat: Text.PlainText; visible: root.agent.modelSelectable === true && !root.agentModelPickable && (root.modelListing.note || "") !== ""; Layout.fillWidth: true; text: root.modelListing.note; wrapMode: Text.WordWrap; color: OmarchyCommons.Color.muted; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
+      }
       StackLayout {
         Layout.fillWidth: true
         Layout.fillHeight: true
@@ -396,7 +444,7 @@ Ui.Panel {
             Text { textFormat: Text.PlainText;
               Layout.fillWidth: true
               text: "Setup checks for existing local models and asks before installing anything. You can skip voice models and use text chat."
-              wrapMode: Text.WordWrap; color: Color.muted; font.family: root.fontFamily; font.pixelSize: Style.font.caption
+              wrapMode: Text.WordWrap; color: OmarchyCommons.Color.muted; font.family: root.fontFamily; font.pixelSize: Style.font.caption
             }
             Ui.Button { Layout.fillWidth: true; text: "Open setup"; bordered: true; focusable: true; onClicked: root.launchSetup() }
           }
@@ -406,7 +454,7 @@ Ui.Panel {
             radius: Style.cornerRadius
             color: "transparent"
             border.width: 1
-            border.color: root.activityActive ? Color.accent : Color.muted
+            border.color: root.activityActive ? OmarchyCommons.Color.accent : OmarchyCommons.Color.muted
             ColumnLayout {
               id: activityContent
               anchors.fill: parent
@@ -417,7 +465,7 @@ Ui.Panel {
                 spacing: Style.space(8)
                 Rectangle {
                   implicitWidth: Style.space(8); implicitHeight: width; radius: width / 2
-                  color: root.assistantState === "Listening" || root.lastOutcome === "Failed" ? Color.urgent : root.running ? Color.accent : Color.muted
+                  color: root.assistantState === "Listening" || root.lastOutcome === "Failed" ? OmarchyCommons.Color.urgent : root.running ? OmarchyCommons.Color.accent : OmarchyCommons.Color.muted
                   SequentialAnimation on opacity {
                     running: root.activityActive && root.opened
                     loops: Animation.Infinite
@@ -436,24 +484,24 @@ Ui.Panel {
                 Text { textFormat: Text.PlainText;
                   visible: root.activityActive || root.lastOutcome !== ""
                   text: root.activitySeconds < 60 ? root.activitySeconds + "s" : Math.floor(root.activitySeconds / 60) + "m " + (root.activitySeconds % 60) + "s"
-                  color: Color.muted; font.family: root.fontFamily; font.pixelSize: Style.font.caption
+                  color: OmarchyCommons.Color.muted; font.family: root.fontFamily; font.pixelSize: Style.font.caption
                 }
               }
               Text { textFormat: Text.PlainText;
                 Layout.fillWidth: true
                 text: root.activityDetail
-                wrapMode: Text.WordWrap; color: Color.muted; font.family: root.fontFamily; font.pixelSize: Style.font.caption
+                wrapMode: Text.WordWrap; color: OmarchyCommons.Color.muted; font.family: root.fontFamily; font.pixelSize: Style.font.caption
               }
               Rectangle {
                 Layout.fillWidth: true
                 id: activityRail
                 implicitHeight: Style.space(3)
                 visible: root.activityActive
-                color: Color.muted
+                color: OmarchyCommons.Color.muted
                 opacity: 0.7
                 clip: true
                 Rectangle {
-                  width: parent.width * 0.25; height: parent.height; color: Color.accent
+                  width: parent.width * 0.25; height: parent.height; color: OmarchyCommons.Color.accent
                   NumberAnimation on x {
                     from: -activityRail.width * 0.25; to: activityRail.width
                     duration: 1300; loops: Animation.Infinite
@@ -475,7 +523,7 @@ Ui.Panel {
               required property var modelData
               width: transcript.width - Style.space(12)
               spacing: Style.space(4)
-              Text { textFormat: Text.PlainText; text: modelData.role === "user" ? (root.profile.userName || "YOU") : modelData.role === "assistant" ? (root.profile.assistantName || "JARVIS") : "SYSTEM"; color: modelData.role === "user" ? Color.muted : Color.accent; font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true }
+              Text { textFormat: Text.PlainText; text: modelData.role === "user" ? (root.profile.userName || "YOU") : modelData.role === "assistant" ? (root.profile.assistantName || "JARVIS") : "SYSTEM"; color: modelData.role === "user" ? OmarchyCommons.Color.muted : OmarchyCommons.Color.accent; font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true }
               TextEdit { width: parent.width; text: modelData.text || ""; readOnly: true; selectByMouse: true; wrapMode: TextEdit.Wrap; textFormat: TextEdit.PlainText; color: root.fg; font.family: root.fontFamily; font.pixelSize: Style.font.body }
             }
             footer: Item {
@@ -485,14 +533,14 @@ Ui.Panel {
                 id: pendingReply
                 visible: root.waitingForReply && !root.streamText
                 spacing: Style.space(8)
-                Text { textFormat: Text.PlainText; text: "JARVIS"; color: Color.accent; font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true }
+                Text { textFormat: Text.PlainText; text: "JARVIS"; color: OmarchyCommons.Color.accent; font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true }
                 Repeater {
                   model: 3
                   Rectangle {
                     required property int index
                     width: Style.space(4); height: width; radius: width / 2
                     anchors.verticalCenter: parent.verticalCenter
-                    color: Color.accent
+                    color: OmarchyCommons.Color.accent
                     SequentialAnimation on opacity {
                       running: root.waitingForReply && root.opened
                       loops: Animation.Infinite
@@ -509,7 +557,6 @@ Ui.Panel {
                 width: parent.width
                 text: root.streamText
                 wrapMode: Text.WordWrap
-                textFormat: Text.PlainText
                 color: root.fg
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.body
@@ -522,7 +569,7 @@ Ui.Panel {
               text: "Jump to latest ↓"; bordered: true; focusable: true
               onClicked: transcript.positionViewAtEnd()
             }
-            Text { textFormat: Text.PlainText; anchors.centerIn: parent; width: parent.width * 0.8; visible: root.messages.length === 0 && !root.streamText && !root.working; text: "What can I help with?\nType below or tap the microphone.\nSuper + Ctrl + J opens JARVIS."; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap; color: Color.muted; font.family: root.fontFamily; font.pixelSize: Style.font.body }
+            Text { textFormat: Text.PlainText; anchors.centerIn: parent; width: parent.width * 0.8; visible: root.messages.length === 0 && !root.streamText && !root.working; text: "What can I help with?\nType below or tap the microphone.\nSuper + Ctrl + J opens JARVIS."; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap; color: OmarchyCommons.Color.muted; font.family: root.fontFamily; font.pixelSize: Style.font.body }
           }
           RowLayout {
             Layout.fillWidth: true
@@ -539,12 +586,12 @@ Ui.Panel {
                 if (text.length > limit) text = text.slice(0, limit)
               }
               color: root.fg
-              placeholderTextColor: Color.muted
+              placeholderTextColor: OmarchyCommons.Color.muted
               font.family: root.fontFamily
               font.pixelSize: Style.font.body
               selectByMouse: true
               enabled: root.running
-              background: Rectangle { color: "transparent"; radius: Style.cornerRadius; border.width: 1; border.color: input.activeFocus ? Color.accent : Color.muted }
+              background: Rectangle { color: "transparent"; radius: Style.cornerRadius; border.width: 1; border.color: input.activeFocus ? OmarchyCommons.Color.accent : OmarchyCommons.Color.muted }
               Keys.onReturnPressed: function(event) {
                 if (!(event.modifiers & Qt.ShiftModifier)) { root.send(); event.accepted = true }
                 else event.accepted = false
@@ -621,7 +668,7 @@ Ui.Panel {
             Text { textFormat: Text.PlainText;
               Layout.fillWidth: true; visible: root.qrTailscale
               text: "Private Tailscale tunnel · " + (root.status.tailscale ? root.status.tailscale.state : "checking")
-              color: Color.accent; wrapMode: Text.WordWrap; font.family: root.fontFamily; font.pixelSize: Style.font.body
+              color: OmarchyCommons.Color.accent; wrapMode: Text.WordWrap; font.family: root.fontFamily; font.pixelSize: Style.font.body
             }
             Ui.Button {
               visible: root.qrTailscale; Layout.fillWidth: true
@@ -656,10 +703,10 @@ Ui.Panel {
                 horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap; color: "#333333"; font.family: root.fontFamily; font.pixelSize: Style.font.body
               }
             }
-            Text { textFormat: Text.PlainText; Layout.fillWidth: true; text: root.qrImage && root.qrForUrl === root.link ? "Ready to scan" : root.qrError ? "QR needs attention" : "Connecting"; horizontalAlignment: Text.AlignHCenter; color: Color.accent; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
+            Text { textFormat: Text.PlainText; Layout.fillWidth: true; text: root.qrImage && root.qrForUrl === root.link ? "Ready to scan" : root.qrError ? "QR needs attention" : "Connecting"; horizontalAlignment: Text.AlignHCenter; color: OmarchyCommons.Color.accent; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
             Text { textFormat: Text.PlainText; Layout.fillWidth: true; text: "Your phone and desktop share the same conversation."; color: root.fg; wrapMode: Text.WordWrap; font.family: root.fontFamily; font.pixelSize: Style.font.body }
-            Text { textFormat: Text.PlainText; Layout.fillWidth: true; text: root.qrTailscale ? "Connect Tailscale on your phone to the same tailnet. Scan once, then choose Add to Home Screen or Install app in your browser. This address survives restarts while the machine name and tailnet stay the same." : root.qrLan ? "Same Wi-Fi only. Accept the local certificate in your phone browser, then allow microphone access." : "Scan with your phone camera, open in your browser, and allow microphone access. The tunnel link changes on restart."; color: Color.muted; wrapMode: Text.WordWrap; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
-            Text { textFormat: Text.PlainText; Layout.fillWidth: true; text: root.link ? root.link.replace(/\?.*$/, "") : "Waiting for a phone link"; color: Color.muted; elide: Text.ElideMiddle; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
+            Text { textFormat: Text.PlainText; Layout.fillWidth: true; text: root.qrTailscale ? "Connect Tailscale on your phone to the same tailnet. Scan once, then choose Add to Home Screen or Install app in your browser. This address survives restarts while the machine name and tailnet stay the same." : root.qrLan ? "Same Wi-Fi only. Accept the local certificate in your phone browser, then allow microphone access." : "Scan with your phone camera, open in your browser, and allow microphone access. The tunnel link changes on restart."; color: OmarchyCommons.Color.muted; wrapMode: Text.WordWrap; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
+            Text { textFormat: Text.PlainText; Layout.fillWidth: true; text: root.link ? root.link.replace(/\?.*$/, "") : "Waiting for a phone link"; color: OmarchyCommons.Color.muted; elide: Text.ElideMiddle; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
             RowLayout {
               Layout.fillWidth: true
               Ui.Button {
@@ -675,16 +722,16 @@ Ui.Panel {
               Keys.onEscapePressed: root.close()
               Layout.fillWidth: true; text: "Open"; bordered: true; enabled: root.link !== ""; onClicked: Qt.openUrlExternally(root.link) }
             }
-            Text { textFormat: Text.PlainText; Layout.fillWidth: true; text: "Voice input: " + (root.status.stt && root.status.stt.ready ? "ready" : "unavailable") + " · Voice output: " + (root.status.tts && root.status.tts.ready ? "ready" : "unavailable"); color: Color.muted; wrapMode: Text.WordWrap; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
+            Text { textFormat: Text.PlainText; Layout.fillWidth: true; text: "Voice input: " + (root.status.stt && root.status.stt.ready ? "ready" : "unavailable") + " · Voice output: " + (root.status.tts && root.status.tts.ready ? "ready" : "unavailable"); color: OmarchyCommons.Color.muted; wrapMode: Text.WordWrap; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
           }
         }
       }
-      Text { textFormat: Text.PlainText; Layout.fillWidth: true; visible: root.notice !== ""; text: root.notice; wrapMode: Text.WordWrap; color: Color.accent; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
+      Text { textFormat: Text.PlainText; Layout.fillWidth: true; visible: root.notice !== ""; text: root.notice; wrapMode: Text.WordWrap; color: OmarchyCommons.Color.accent; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
       Ui.PanelSeparator { Layout.fillWidth: true }
       RowLayout {
         Layout.fillWidth: true
         Ui.Button { text: "Setup"; bordered: true; focusable: true; onClicked: root.launchSetup() }
-        Text { textFormat: Text.PlainText; Layout.fillWidth: true; text: "Local voice bridge"; color: Color.muted; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
+        Text { textFormat: Text.PlainText; Layout.fillWidth: true; text: "Local voice bridge"; color: OmarchyCommons.Color.muted; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
         Ui.Button {
               focusable: true
               Keys.onEscapePressed: root.close()
