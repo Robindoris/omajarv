@@ -65,6 +65,36 @@ jarvis setup-status   # inspect local model readiness without changing anything
 jarvis restart
 ```
 
+### Get the latest changes
+
+For an existing Git clone install, run this Bash snippet from a terminal. Change
+`repo` if you cloned elsewhere. It refuses to update a checkout with local edits
+and uses a fast-forward pull so divergent history is left for you to resolve.
+
+```bash
+(
+  set -euo pipefail
+  repo="$HOME/.local/share/omajarv"
+  cd "$repo"
+  if [[ -n "$(git status --porcelain)" ]]; then
+    echo "Local changes found. Commit or stash them before updating." >&2
+    exit 1
+  fi
+  git pull --ff-only origin main
+  bash install.sh --no-packages --no-models
+  jarvis restart
+  jarvis status
+)
+```
+
+Rerunning the installer refreshes the launcher, user service, bar plugin and bundled
+skill. This snippet skips package installation and model downloads; if a release
+adds dependencies, run `jarvis setup` afterward. Your configuration, models,
+personality and saved history are retained. The restart interrupts active requests
+and clears temporary attachments, so finish your conversation's current request
+first. For a marketplace installation, use the marketplace's update mechanism;
+this snippet is for the clone you originally installed from.
+
 ### Which models?
 
 | Component | Offered download | Approximate size |
@@ -98,6 +128,26 @@ o.bind("SUPER + CTRL + J", "JARVIS assistant", "jarvis toggle")
 Phone and desktop share JARVIS history, including after bridge restarts. They do
 not attach to an unrelated agent conversation already running in another terminal.
 Only one agent request runs at a time.
+
+### Files and clipboard images
+
+Use **Attach files** in desktop or phone chat, or paste an image into the message.
+Desktop also offers **Paste image** and Ctrl+V; phone clipboard-button availability
+depends on browser permissions, with the file picker as a fallback. Desktop needs
+`zenity` for the file picker and `wl-clipboard` for clipboard access.
+You can send up to four files (10 MiB each), with or without accompanying text, and
+remove pending files before sending. Files are shared with your selected agent;
+Codex receives raster images through its image input, while other supported agents
+use their file-reading tools. File format support depends on the selected agent.
+Attachments expire after 24 hours and are cleared by New conversation or restart.
+
+### Coding agent models
+
+With OpenCode selected, use the model picker in desktop or phone chat to choose
+a provider/model or return to **Agent default**. Free variants appear first.
+The choice is saved per agent. Finish or stop the current request before changing
+models. Hermes uses its own default; run `hermes model` in a terminal to change it.
+Codex and Claude do not expose a model picker in JARVIS.
 
 ## On your phone
 
@@ -179,6 +229,10 @@ not carry over; your visible transcript is kept. New conversation clears chat
 history while keeping your names and personality. If settings changed on another
 device, close and reopen the editor before saving again.
 
+You can also ask JARVIS to remember a fact or preference. It appends that memory
+to your existing personality. Saved personality changes are loaded live for the
+next request and appear when you reopen the editor; no restart is needed.
+
 | Location | Contents |
 | --- | --- |
 | `~/.config/omarchy-jarvis/config.json` | Agent, networking, voice and model settings |
@@ -227,6 +281,9 @@ node tests/integration.mjs
 node tests/agents.mjs        # OpenCode/Hermes transport, sessions and Stop
 node tests/local-privacy.mjs
 node tests/personality.mjs
+node tests/attachments.mjs
+node tests/agent-models.mjs
+node tests/desktop-models.mjs
 node tests/sudo.mjs          # encrypted password transport; no real sudo
 node tests/privacy-audit.mjs # requires FFmpeg; checks privacy boundaries with fixtures
 node tests/theme-browser.mjs  # requires Chromium
@@ -252,15 +309,3 @@ See the [publication review](docs/RELEASE-REVIEW.md) for the tested boundaries.
 
 [MIT](LICENSE) for omajarv source. Speech runtimes, coding agents and downloaded
 models retain their own terms; this repository does not redistribute model weights.
-
-### Files and clipboard images
-
-Use **Attach files** in desktop or phone chat, or paste an image into the message.
-Desktop also offers **Paste image** and Ctrl+V; phone clipboard-button availability
-depends on browser permissions, with the file picker as a fallback. Desktop needs
-`zenity` for the file picker and `wl-clipboard` for clipboard access.
-You can send up to four files (10 MiB each), with or without accompanying text, and
-remove pending files before sending. Files are shared with your selected agent;
-Codex receives raster images through its image input, while other supported agents
-use their file-reading tools. File format support depends on the selected agent.
-Attachments expire after 24 hours and are cleared by New conversation or restart.
