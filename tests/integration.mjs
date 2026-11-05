@@ -5,6 +5,7 @@ import https from 'node:https';
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { once } from 'node:events';
+import { publicEncrypt, constants } from 'node:crypto';
 const root=path.resolve(import.meta.dirname, "..");
 const home=fs.mkdtempSync(path.join(os.tmpdir(),'jarvis-integration-'));
 const port=44319;
@@ -18,22 +19,59 @@ let prompt='';
 process.stdin.on('data',chunk=>prompt+=chunk);
 process.stdin.on('end',()=>{
  require('fs').writeFileSync(process.env.HOME + '/agent-prompt', prompt);
+ if(prompt.includes('privacy failure request')) { console.error(prompt);process.exit(1); }
+ if(prompt.includes('sudo fixture request') || prompt.includes('sudo finish early request')) {
+  const fs=require('fs'),path=require('path');
+  const wrapper=path.join(process.env.PATH.split(path.delimiter)[0],'sudo');
+  const capability=JSON.parse(fs.readFileSync(wrapper,'utf8').match(/await runSudo\\((\\{.*\\}), process/)[1]);
+  const child=require('child_process').spawn(process.execPath,[process.env.HOME+'/fake-sudo.cjs'],{env:{...process.env,JARVIS_SUDO_SOCKET:capability.socketPath,JARVIS_SUDO_TICKET:capability.ticket},stdio:['ignore','pipe','pipe']});
+  child.stdout.resume();child.stderr.resume();
+  if(prompt.includes('sudo finish early request')) {
+   setInterval(()=>{if(fs.existsSync(process.env.HOME+'/finish-agent')){
+    console.log(JSON.stringify({type:'item.completed',item:{id:'early-reply',type:'agent_message',text:'Authorization pending.'}}));process.exit(0);
+   }},10);return;
+  }
+  child.on('exit',code=>{
+   if(code)process.exit(code);
+   console.log(JSON.stringify({type:'item.completed',item:{id:'sudo-reply',type:'agent_message',text:'Privileged fixture completed.'}}));
+  });return;
+ }
  if(prompt.includes('slow request')) { setTimeout(()=>process.exit(),30000); return; }
  console.log(JSON.stringify({type:'thread.started',thread_id:'integration-session'}));
  console.log(JSON.stringify({type:'item.completed',item:{id:'reply',type:'agent_message',text:'Hello from the test agent.'}}));
 });
 `,{mode:0o755});
+fs.writeFileSync(path.join(home,'fake-sudo.cjs'),`
+const {spawn}=require('node:child_process');
+const child=spawn(process.execPath,[${JSON.stringify(path.join(root,'server/sudo-askpass.mjs'))}],{env:{...process.env,JARVIS_SUDO_COMMAND:'sudo "fixture-command"',JARVIS_SUDO_CWD:process.env.HOME},stdio:['ignore','pipe','pipe']});
+let password='';child.stdout.on('data',data=>password+=data);child.stderr.resume();
+child.on('exit',code=>{const ok=code===0&&password==='integration-sudo-fixture\\n';password='';process.exit(ok?0:1);});
+`);
 fs.writeFileSync(path.join(home,'bin/tailscale'),'#!/bin/sh\nprintf \'{}\\n\'\n',{mode:0o755});
 const env={...process.env,HOME:home,PATH:path.join(home,'bin')+':'+process.env.PATH};
 let server=spawn(process.execPath,[path.join(root,'server/jarvis-server.mjs')],{env,stdio:['ignore','pipe','pipe']});
 let logs='';server.stdout.on('data',b=>logs+=b);server.stderr.on('data',b=>logs+=b);
 let helper;
 function api(endpoint,body,auth=true){return new Promise((resolve,reject)=>{
-const req=https.request({hostname:'127.0.0.1',servername:'localhost',port,path:endpoint,method:body===undefined?'GET':'POST',ca:fs.readFileSync(path.join(state,'cert.pem')),headers:auth?{'x-jarvis-token':fs.readFileSync(path.join(state,'token'),'utf8').trim(),'content-type':'application/json'}:{}},res=>{let text='';res.setEncoding('utf8');res.on('data',b=>text+=b);res.on('end',()=>resolve({status:res.statusCode,text}));});req.on('error',reject);req.end(body===undefined?undefined:JSON.stringify(body));});}
+const req=https.request({hostname:'127.0.0.1',servername:'localhost',port,path:endpoint,method:body===undefined?'GET':'POST',ca:fs.readFileSync(path.join(state,'cert.pem')),headers:auth?{'x-jarvis-token':fs.readFileSync(path.join(state,'token'),'utf8').trim(),'content-type':'application/json'}:{}},res=>{let text='';res.setEncoding('utf8');res.on('data',b=>text+=b);res.on('end',()=>resolve({status:res.statusCode,text,headers:res.headers}));});req.on('error',reject);req.end(body===undefined?undefined:JSON.stringify(body));});}
 try {
 for(let i=0;i<100&&!logs.includes('listening on');i++)await new Promise(r=>setTimeout(r,50));
 assert.match(logs,/listening on/);
+for(const endpoint of ['/api/status','/api/theme','/api/health','/api/personality','/api/history','/api/sudo/pending']){
+ assert.equal((await api(endpoint,undefined,false)).status,401,endpoint);
+}
+for(const endpoint of ['/api/chat','/api/chat/stop','/api/session/reset','/api/personality','/api/stt','/api/tts','/api/sudo/reply']){
+ assert.equal((await api(endpoint,{},false)).status,401,endpoint);
+}
+const privateHeaders=(await api('/api/history')).headers;
+assert.equal(privateHeaders['cache-control'],'no-store');
+assert.equal(privateHeaders['referrer-policy'],'no-referrer');
+assert.match(privateHeaders['content-security-policy'],/connect-src 'self'/);
+assert.match(privateHeaders['content-security-policy'],/frame-ancestors 'none'/);
 assert.equal((await api('/api/history',undefined,false)).status,401);
+assert.equal((await api('/api/sudo/pending',undefined,false)).status,401);
+assert.equal((await api('/api/sudo/reply',{id:'fake',ciphertext:'fake'},false)).status,401);
+assert.equal((await api('/api/sudo/reply',{id:'fake',password:'never accepted'})).status,409);
 assert.equal((await api('/',undefined,false)).status,401);
 assert.equal((await api('/?k=incorrect',undefined,false)).status,401);
 const privateToken=fs.readFileSync(path.join(state,'token'),'utf8').trim();
@@ -109,6 +147,57 @@ for(let i=0;i<100&&!output.includes('"event":"done"');i++)await new Promise(r=>s
 assert.match(output,/"event":"done"/,errors+output);
 assert.match(output,/Hello from the test agent/);
 assert.equal(JSON.parse((await api('/api/history')).text).messages.length,4);
+const auditProfile=JSON.parse((await api('/api/personality')).text);
+const promptMarker='PRIVATE_PERSONALITY_AUDIT_FIXTURE';
+await api('/api/personality',{...auditProfile,personality:promptMarker});
+assert.ok(!('personality' in JSON.parse((await api('/api/history')).text).profile),'Routine history polling must not resend the personality prompt');
+const failure=await api('/api/chat',{text:'privacy failure request PRIVATE_REQUEST_AUDIT_FIXTURE'});
+assert.match(failure.text,/Check its provider and permissions/);
+assert.ok(!failure.text.includes(promptMarker));
+assert.ok(!failure.text.includes('PRIVATE_REQUEST_AUDIT_FIXTURE'));
+assert.ok(!logs.includes(promptMarker));
+assert.ok(!logs.includes('PRIVATE_REQUEST_AUDIT_FIXTURE'));
+const savedHistory=JSON.parse(fs.readFileSync(path.join(state,'history.json'),'utf8'));
+assert.ok(!JSON.stringify(savedHistory).includes(promptMarker));
+assert.ok(!('personality' in JSON.parse((await api('/api/history')).text).profile));
+const nextProfile=JSON.parse((await api('/api/personality')).text);
+await api('/api/personality',{...nextProfile,personality:auditProfile.personality});
+await api('/api/session/reset',{});
+const sudoTurn=api('/api/chat',{text:'sudo fixture request'});
+let sudoRequest;
+for(let i=0;i<200;i++){
+ const requests=JSON.parse((await api('/api/sudo/pending')).text).requests;
+ if(requests.length){sudoRequest=requests[0];break;}
+ await new Promise(resolve=>setTimeout(resolve,20));
+}
+assert.ok(sudoRequest,'Fake sudo should wait for phone authorization');
+assert.equal((await api('/api/sudo/reply',{id:sudoRequest.id,password:'never accepted'})).status,409);
+const ciphertext=publicEncrypt({key:sudoRequest.publicKey,padding:constants.RSA_PKCS1_OAEP_PADDING,oaepHash:'sha256'},Buffer.from('integration-sudo-fixture')).toString('base64');
+assert.equal((await api('/api/sudo/reply',{id:sudoRequest.id,ciphertext})).status,200);
+assert.equal((await api('/api/sudo/reply',{id:sudoRequest.id,ciphertext})).status,409);
+const sudoResult=await sudoTurn;
+assert.match(sudoResult.text,/Privileged fixture completed/);
+assert.ok(!sudoResult.text.includes('integration-sudo-fixture'));
+assert.ok(!(await api('/api/history')).text.includes('integration-sudo-fixture'));
+assert.ok(!logs.includes('integration-sudo-fixture'));
+assert.ok(!fs.readFileSync(path.join(home,'agent-prompt'),'utf8').includes('integration-sudo-fixture'));
+assert.deepEqual(JSON.parse((await api('/api/sudo/pending')).text).requests,[]);
+let earlyFinished=false;
+const earlyTurn=api('/api/chat',{text:'sudo finish early request'}).then(response=>{earlyFinished=true;return response;});
+sudoRequest=null;
+for(let i=0;i<200;i++){
+ const requests=JSON.parse((await api('/api/sudo/pending')).text).requests;
+ if(requests.length){sudoRequest=requests[0];break;}
+ await new Promise(resolve=>setTimeout(resolve,20));
+}
+assert.ok(sudoRequest);
+fs.writeFileSync(path.join(home,'finish-agent'),'yes');
+await new Promise(resolve=>setTimeout(resolve,100));
+assert.equal(earlyFinished,false,'Finishing the model reply must not close an outstanding approval');
+assert.equal(JSON.parse((await api('/api/sudo/pending')).text).requests.length,1);
+const earlyCiphertext=publicEncrypt({key:sudoRequest.publicKey,padding:constants.RSA_PKCS1_OAEP_PADDING,oaepHash:'sha256'},Buffer.from('integration-sudo-fixture')).toString('base64');
+assert.equal((await api('/api/sudo/reply',{id:sudoRequest.id,ciphertext:earlyCiphertext})).status,200);
+assert.match((await earlyTurn).text,/Authorization pending/);
 const pending = api('/api/chat', {text:'slow request'});
 for(let i=0;i<100;i++){ if(JSON.parse((await api('/api/status')).text).chatBusy)break; await new Promise(r=>setTimeout(r,20)); }
 assert.equal((await api('/api/session/reset',{})).status,409);
@@ -129,5 +218,5 @@ assert.ok(payload.matrix.every(row=>row.length===payload.size));
 fs.writeFileSync(path.join(home,'qr.png'),Buffer.from(payload.image.split(',')[1],'base64'));
 const decoded=spawnSync('zbarimg',['--quiet','--raw',path.join(home,'qr.png')],{encoding:'utf8'});
 assert.equal(decoded.stdout.trim(),payload.url);
-console.log('PASS: authenticated personality editing, ordered onboarding, desktop/phone sync, persistence, chat streaming, history, pinned TLS, reset, cross-device Stop and QR decode.');
+console.log('PASS: authenticated personality/onboarding, encrypted sudo API with no password in model/history/logs, streaming, pinned TLS, reset, Stop and QR decode.');
 } catch(error){console.error(logs);throw error;} finally {helper?.kill('SIGTERM');const stopped=server.exitCode===null?once(server,'exit'):Promise.resolve();server.kill('SIGTERM');await stopped;fs.rmSync(home,{recursive:true,force:true});}

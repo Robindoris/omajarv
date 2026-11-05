@@ -6,6 +6,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
+import { writePrivateFile } from './privacy.mjs';
 
 export const HOME = os.homedir();
 export const ROOT = path.resolve(import.meta.dirname, "..");
@@ -92,6 +93,7 @@ export function loadConfig() {
   let user = {};
   try {
     user = JSON.parse(fs.readFileSync(paths.configFile, "utf8"));
+    fs.chmodSync(paths.configFile, 0o600);
   } catch {
     // No config yet: defaults are the config.
   }
@@ -103,7 +105,7 @@ export function loadConfig() {
 export function writeDefaultConfig(force = false) {
   ensureDirs();
   if (fs.existsSync(paths.configFile) && !force) return false;
-  fs.writeFileSync(paths.configFile, JSON.stringify(defaults, null, 2) + "\n", { mode: 0o600 });
+  writePrivateFile(paths.configFile, JSON.stringify(defaults, null, 2) + "\n");
   return true;
 }
 
@@ -120,13 +122,15 @@ export function readToken() {
 export function rotateToken() {
   ensureDirs();
   const token = crypto.randomBytes(16).toString("base64url");
-  fs.writeFileSync(paths.tokenFile, token + "\n", { mode: 0o600 });
+  writePrivateFile(paths.tokenFile, token + "\n");
   return token;
 }
 
 export function readSessions() {
   try {
-    return JSON.parse(fs.readFileSync(paths.sessionsFile, "utf8"));
+    const sessions = JSON.parse(fs.readFileSync(paths.sessionsFile, "utf8"));
+    fs.chmodSync(paths.sessionsFile, 0o600);
+    return sessions;
   } catch {
     return {};
   }
@@ -134,7 +138,7 @@ export function readSessions() {
 
 export function writeSessions(sessions) {
   ensureDirs();
-  fs.writeFileSync(paths.sessionsFile, JSON.stringify(sessions, null, 2) + "\n", { mode: 0o600 });
+  writePrivateFile(paths.sessionsFile, JSON.stringify(sessions, null, 2) + "\n");
 }
 
 // The Omarchy default coding agent, e.g. "codex". Empty when the user has

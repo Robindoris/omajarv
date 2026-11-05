@@ -82,13 +82,13 @@ Ui.Panel {
       ColumnLayout {
         width: parent.width
         spacing: Style.space(10)
-        Text { text: "Personality"; color: root.fg; font.family: root.fontFamily; font.pixelSize: Style.font.title }
-        Text { text: "Assistant name"; color: root.fg; font.family: root.fontFamily }
+        Text { textFormat: Text.PlainText; text: "Personality"; color: root.fg; font.family: root.fontFamily; font.pixelSize: Style.font.title }
+        Text { textFormat: Text.PlainText; text: "Assistant name"; color: root.fg; font.family: root.fontFamily }
         Controls.TextField {
           id: assistantNameField; Layout.fillWidth: true; maximumLength: 80; color: root.fg; selectByMouse: true; Accessible.name: "Assistant name"
           background: Rectangle { color: "transparent"; border.color: Color.muted; radius: Style.cornerRadius }
         }
-        Text { text: "Personality prompt"; color: root.fg; font.family: root.fontFamily }
+        Text { textFormat: Text.PlainText; text: "Personality prompt"; color: root.fg; font.family: root.fontFamily }
         Controls.TextArea {
           id: personalityField
           Layout.fillWidth: true
@@ -101,13 +101,13 @@ Ui.Panel {
           background: Rectangle { color: "transparent"; border.color: Color.muted; radius: Style.cornerRadius }
           Accessible.name: "Personality prompt"
         }
-        Text { text: "Your name"; color: root.fg; font.family: root.fontFamily }
+        Text { textFormat: Text.PlainText; text: "Your name"; color: root.fg; font.family: root.fontFamily }
         Controls.TextField {
           id: userNameField; Layout.fillWidth: true; maximumLength: 80; color: root.fg; selectByMouse: true; Accessible.name: "Your name"
           background: Rectangle { color: "transparent"; border.color: Color.muted; radius: Style.cornerRadius }
         }
-        Text { Layout.fillWidth: true; text: "Applies to desktop and phone on your next request."; wrapMode: Text.WordWrap; color: Color.muted; font.family: root.fontFamily }
-        Text { Layout.fillWidth: true; visible: root.notice !== ""; text: root.notice; wrapMode: Text.WordWrap; color: Color.urgent; font.family: root.fontFamily }
+        Text { textFormat: Text.PlainText; Layout.fillWidth: true; text: "Applies to desktop and phone on your next request."; wrapMode: Text.WordWrap; color: Color.muted; font.family: root.fontFamily }
+        Text { textFormat: Text.PlainText; Layout.fillWidth: true; visible: root.notice !== ""; text: root.notice; wrapMode: Text.WordWrap; color: Color.urgent; font.family: root.fontFamily }
         RowLayout {
           Layout.fillWidth: true
           Ui.Button { text: "Cancel"; bordered: true; enabled: !root.savingPersonality; onClicked: personalityEditor.close() }
@@ -360,11 +360,11 @@ Ui.Panel {
         ColumnLayout {
           Layout.fillWidth: true
           spacing: Style.space(3)
-          Text { text: root.profile.assistantName || "JARVIS"; color: root.fg; font.family: root.fontFamily; font.pixelSize: Style.font.title; font.bold: true; font.letterSpacing: 2; Layout.fillWidth: true; elide: Text.ElideRight }
-          Text { text: root.agent.label || "Omarchy agent"; color: Color.muted; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
+          Text { textFormat: Text.PlainText; text: root.profile.assistantName || "JARVIS"; color: root.fg; font.family: root.fontFamily; font.pixelSize: Style.font.title; font.bold: true; font.letterSpacing: 2; Layout.fillWidth: true; elide: Text.ElideRight }
+          Text { textFormat: Text.PlainText; text: root.agent.label || "Omarchy agent"; color: Color.muted; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
         }
         Ui.Button { text: "Personality"; bordered: true; focusable: true; enabled: root.running; onClicked: root.command({action: "personality"}) }
-        Text { text: !root.statusLoaded ? "Checking" : root.running ? "Online" : "Offline"; color: root.running ? Color.accent : Color.muted; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
+        Text { textFormat: Text.PlainText; text: !root.statusLoaded ? "Checking" : root.running ? "Online" : "Offline"; color: root.running ? Color.accent : Color.muted; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
       }
       RowLayout {
         Layout.fillWidth: true
@@ -388,12 +388,12 @@ Ui.Panel {
             Layout.fillWidth: true
             visible: root.setupLoaded && (!root.setup.configured || !root.setup.voiceReady)
             spacing: Style.space(6)
-            Text {
+            Text { textFormat: Text.PlainText;
               Layout.fillWidth: true
               text: !root.setup.configured ? "Welcome to JARVIS" : "Finish voice setup"
               color: root.fg; font.family: root.fontFamily; font.pixelSize: Style.font.body; font.bold: true
             }
-            Text {
+            Text { textFormat: Text.PlainText;
               Layout.fillWidth: true
               text: "Setup checks for existing local models and asks before installing anything. You can skip voice models and use text chat."
               wrapMode: Text.WordWrap; color: Color.muted; font.family: root.fontFamily; font.pixelSize: Style.font.caption
@@ -426,20 +426,20 @@ Ui.Panel {
                   }
                   opacity: root.activityActive ? 0.8 : 1
                 }
-                Text {
+                Text { textFormat: Text.PlainText;
                   Layout.fillWidth: true
                   text: root.activityTitle
                   color: root.fg; font.family: root.fontFamily; font.pixelSize: Style.font.body; font.bold: true
                   elide: Text.ElideRight
                   Accessible.name: text
                 }
-                Text {
+                Text { textFormat: Text.PlainText;
                   visible: root.activityActive || root.lastOutcome !== ""
                   text: root.activitySeconds < 60 ? root.activitySeconds + "s" : Math.floor(root.activitySeconds / 60) + "m " + (root.activitySeconds % 60) + "s"
                   color: Color.muted; font.family: root.fontFamily; font.pixelSize: Style.font.caption
                 }
               }
-              Text {
+              Text { textFormat: Text.PlainText;
                 Layout.fillWidth: true
                 text: root.activityDetail
                 wrapMode: Text.WordWrap; color: Color.muted; font.family: root.fontFamily; font.pixelSize: Style.font.caption
@@ -475,7 +475,7 @@ Ui.Panel {
               required property var modelData
               width: transcript.width - Style.space(12)
               spacing: Style.space(4)
-              Text { text: modelData.role === "user" ? (root.profile.userName || "YOU") : modelData.role === "assistant" ? (root.profile.assistantName || "JARVIS") : "SYSTEM"; color: modelData.role === "user" ? Color.muted : Color.accent; font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true }
+              Text { textFormat: Text.PlainText; text: modelData.role === "user" ? (root.profile.userName || "YOU") : modelData.role === "assistant" ? (root.profile.assistantName || "JARVIS") : "SYSTEM"; color: modelData.role === "user" ? Color.muted : Color.accent; font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true }
               TextEdit { width: parent.width; text: modelData.text || ""; readOnly: true; selectByMouse: true; wrapMode: TextEdit.Wrap; textFormat: TextEdit.PlainText; color: root.fg; font.family: root.fontFamily; font.pixelSize: Style.font.body }
             }
             footer: Item {
@@ -485,7 +485,7 @@ Ui.Panel {
                 id: pendingReply
                 visible: root.waitingForReply && !root.streamText
                 spacing: Style.space(8)
-                Text { text: "JARVIS"; color: Color.accent; font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true }
+                Text { textFormat: Text.PlainText; text: "JARVIS"; color: Color.accent; font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true }
                 Repeater {
                   model: 3
                   Rectangle {
@@ -504,7 +504,7 @@ Ui.Panel {
                   }
                 }
               }
-              Text {
+              Text { textFormat: Text.PlainText;
                 id: streamingReply
                 width: parent.width
                 text: root.streamText
@@ -522,7 +522,7 @@ Ui.Panel {
               text: "Jump to latest ↓"; bordered: true; focusable: true
               onClicked: transcript.positionViewAtEnd()
             }
-            Text { anchors.centerIn: parent; width: parent.width * 0.8; visible: root.messages.length === 0 && !root.streamText && !root.working; text: "What can I help with?\nType below or tap the microphone.\nSuper + Ctrl + J opens JARVIS."; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap; color: Color.muted; font.family: root.fontFamily; font.pixelSize: Style.font.body }
+            Text { textFormat: Text.PlainText; anchors.centerIn: parent; width: parent.width * 0.8; visible: root.messages.length === 0 && !root.streamText && !root.working; text: "What can I help with?\nType below or tap the microphone.\nSuper + Ctrl + J opens JARVIS."; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap; color: Color.muted; font.family: root.fontFamily; font.pixelSize: Style.font.body }
           }
           RowLayout {
             Layout.fillWidth: true
@@ -618,7 +618,7 @@ Ui.Panel {
                 onClicked: root.setTarget(false, true)
               }
             }
-            Text {
+            Text { textFormat: Text.PlainText;
               Layout.fillWidth: true; visible: root.qrTailscale
               text: "Private Tailscale tunnel · " + (root.status.tailscale ? root.status.tailscale.state : "checking")
               color: Color.accent; wrapMode: Text.WordWrap; font.family: root.fontFamily; font.pixelSize: Style.font.body
@@ -648,7 +648,7 @@ Ui.Panel {
                 cache: false
                 onStatusChanged: { if (status === Image.Error) root.qrError = "QR image could not be displayed. Press Retry." }
               }
-              Text {
+              Text { textFormat: Text.PlainText;
                 anchors.centerIn: parent
                 width: parent.width - Style.space(30)
                 visible: !root.qrImage || root.qrForUrl !== root.link
@@ -656,10 +656,10 @@ Ui.Panel {
                 horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap; color: "#333333"; font.family: root.fontFamily; font.pixelSize: Style.font.body
               }
             }
-            Text { Layout.fillWidth: true; text: root.qrImage && root.qrForUrl === root.link ? "Ready to scan" : root.qrError ? "QR needs attention" : "Connecting"; horizontalAlignment: Text.AlignHCenter; color: Color.accent; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
-            Text { Layout.fillWidth: true; text: "Your phone and desktop share the same conversation."; color: root.fg; wrapMode: Text.WordWrap; font.family: root.fontFamily; font.pixelSize: Style.font.body }
-            Text { Layout.fillWidth: true; text: root.qrTailscale ? "Connect Tailscale on your phone to the same tailnet. Scan once, then choose Add to Home Screen or Install app in your browser. This address survives restarts while the machine name and tailnet stay the same." : root.qrLan ? "Same Wi-Fi only. Accept the local certificate in your phone browser, then allow microphone access." : "Scan with your phone camera, open in your browser, and allow microphone access. The tunnel link changes on restart."; color: Color.muted; wrapMode: Text.WordWrap; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
-            Text { Layout.fillWidth: true; text: root.link ? root.link.replace(/\?.*$/, "") : "Waiting for a phone link"; color: Color.muted; elide: Text.ElideMiddle; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
+            Text { textFormat: Text.PlainText; Layout.fillWidth: true; text: root.qrImage && root.qrForUrl === root.link ? "Ready to scan" : root.qrError ? "QR needs attention" : "Connecting"; horizontalAlignment: Text.AlignHCenter; color: Color.accent; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
+            Text { textFormat: Text.PlainText; Layout.fillWidth: true; text: "Your phone and desktop share the same conversation."; color: root.fg; wrapMode: Text.WordWrap; font.family: root.fontFamily; font.pixelSize: Style.font.body }
+            Text { textFormat: Text.PlainText; Layout.fillWidth: true; text: root.qrTailscale ? "Connect Tailscale on your phone to the same tailnet. Scan once, then choose Add to Home Screen or Install app in your browser. This address survives restarts while the machine name and tailnet stay the same." : root.qrLan ? "Same Wi-Fi only. Accept the local certificate in your phone browser, then allow microphone access." : "Scan with your phone camera, open in your browser, and allow microphone access. The tunnel link changes on restart."; color: Color.muted; wrapMode: Text.WordWrap; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
+            Text { textFormat: Text.PlainText; Layout.fillWidth: true; text: root.link ? root.link.replace(/\?.*$/, "") : "Waiting for a phone link"; color: Color.muted; elide: Text.ElideMiddle; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
             RowLayout {
               Layout.fillWidth: true
               Ui.Button {
@@ -675,16 +675,16 @@ Ui.Panel {
               Keys.onEscapePressed: root.close()
               Layout.fillWidth: true; text: "Open"; bordered: true; enabled: root.link !== ""; onClicked: Qt.openUrlExternally(root.link) }
             }
-            Text { Layout.fillWidth: true; text: "Voice input: " + (root.status.stt && root.status.stt.ready ? "ready" : "unavailable") + " · Voice output: " + (root.status.tts && root.status.tts.ready ? "ready" : "unavailable"); color: Color.muted; wrapMode: Text.WordWrap; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
+            Text { textFormat: Text.PlainText; Layout.fillWidth: true; text: "Voice input: " + (root.status.stt && root.status.stt.ready ? "ready" : "unavailable") + " · Voice output: " + (root.status.tts && root.status.tts.ready ? "ready" : "unavailable"); color: Color.muted; wrapMode: Text.WordWrap; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
           }
         }
       }
-      Text { Layout.fillWidth: true; visible: root.notice !== ""; text: root.notice; wrapMode: Text.WordWrap; color: Color.accent; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
+      Text { textFormat: Text.PlainText; Layout.fillWidth: true; visible: root.notice !== ""; text: root.notice; wrapMode: Text.WordWrap; color: Color.accent; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
       Ui.PanelSeparator { Layout.fillWidth: true }
       RowLayout {
         Layout.fillWidth: true
         Ui.Button { text: "Setup"; bordered: true; focusable: true; onClicked: root.launchSetup() }
-        Text { Layout.fillWidth: true; text: "Local voice bridge"; color: Color.muted; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
+        Text { textFormat: Text.PlainText; Layout.fillWidth: true; text: "Local voice bridge"; color: Color.muted; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
         Ui.Button {
               focusable: true
               Keys.onEscapePressed: root.close()

@@ -23,6 +23,20 @@ Publication-preparation changes:
 
 Remaining trust boundaries:
 
+Phone sudo authorization uses a per-turn Unix socket in a mode-0700 directory,
+with a mode-0600 socket and random capability. Requests exist only during an active
+HTTPS-backed chat. Each askpass invocation creates an RSA-3072 key pair in memory;
+the phone uses RSA-OAEP/SHA-256 to encrypt the password, and the bridge relays only
+ciphertext. The private key and decrypted password stay in the askpass process,
+whose stdout is sudo's password pipe. The API rejects plaintext password fields,
+requires authentication and JSON submissions, and does not log request bodies.
+Replies are one-use; cancellation, expiry, Stop and turn completion remove pending
+requests. No password cache or sudoers bypass is added. Password buffers are
+cleared after use, although JavaScript cannot guarantee erasure of all memory
+copies or protection from same-user inspection. A hostile full-access local agent
+can modify helpers or impersonate a request; this is not a separate OS security
+principal. HTTPS intermediaries remain trusted to serve unmodified frontend code.
+
 Anyone holding a valid access link can issue requests to your coding agent. Full
 access is equivalent to trusting that requester with your Linux account. Agent
 providers and tool execution remain outside JARVIS's control. Remote authentication

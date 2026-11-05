@@ -35,7 +35,7 @@ if (id === 'hermes') {
       const prompt = msg.params.prompt[0].text;
       fs.writeFileSync(path.join(process.env.JARVIS_AGENT_TEST_HOME, 'invocation'), JSON.stringify({args, prompt, cwd:process.cwd(), log}));
       if (prompt.includes('slow request')) { promptId = msg.id; return; }
-      if (prompt.includes('failure request')) { send({id:msg.id, error:{message:'provider unavailable'}}); return; }
+      if (prompt.includes('failure request')) { send({id:msg.id, error:{message:'provider unavailable '+prompt}}); return; }
       if (prompt.includes('permission request')) {
         promptId = msg.id;
         send({id:'permission', method:'session/request_permission', params:{options:[{kind:'allow_once', optionId:'allow'}]}});
@@ -59,7 +59,7 @@ if (id === 'hermes') {
   process.stdin.on('end', () => {
     fs.writeFileSync(path.join(process.env.JARVIS_AGENT_TEST_HOME, 'invocation'), JSON.stringify({args, prompt, cwd: process.cwd()}));
     if (prompt.includes('slow request')) { setTimeout(() => {}, 30000); return; }
-    if (prompt.includes('failure request')) { send({type:'error', error:{message:'provider unavailable'}}); return; }
+    if (prompt.includes('failure request')) { send({type:'error', error:{message:'provider unavailable '+prompt}}); return; }
     send({type:'step_start', sessionID:'opencode-session'});
     send({type:'text', sessionID:'opencode-session', part:{id:'answer', text:'Hello'}});
     send({type:'text', sessionID:'opencode-session', part:{id:'answer', text:'Hello world'}});
@@ -99,7 +99,11 @@ if (id === 'hermes') {
         assert.equal(permission.outcome.outcome, full ? 'selected' : 'cancelled');
       }
     }
-    await assert.rejects(runAgent({config, text:'failure request'}), /provider unavailable/);
+    await assert.rejects(runAgent({config, text:'failure request'}), error => {
+      assert.ok(!error.message.includes('provider unavailable'));
+      assert.ok(!error.message.includes(config.systemPrompt));
+      return /request failed/.test(error.message);
+    });
     const controller = new AbortController();
     const pending = runAgent({config, text:'slow request', signal:controller.signal});
     if (id === 'hermes') {

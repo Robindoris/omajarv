@@ -9,6 +9,7 @@ import readline from "node:readline";
 import fs from "node:fs";
 import path from "node:path";
 import { runHermes } from "./hermes.mjs";
+import { privateError } from "./privacy.mjs";
 import { paths, readSessions, writeSessions, resolveAgent } from "./config.mjs";
 
 const LABELS = {
@@ -68,7 +69,7 @@ function adapter(id, { prompt, session, config }) {
         cmd: "opencode", args, cwd, stdin: prompt, requireSuccess: true,
         parse: (event, emit, setSession) => {
           if (event.sessionID) setSession(event.sessionID);
-          if (event.type === "error") throw new Error(event.error?.message || event.error?.data?.message || "OpenCode request failed");
+      if (event.type === "error") throw privateError('OpenCode request failed. Check its provider and permissions.');
           if (event.type === "text" && typeof event.part?.text === "string") emit(event.part.text);
         },
       };
@@ -126,16 +127,16 @@ function adapter(id, { prompt, session, config }) {
 
 // Run one turn. `onText` receives incremental text; the promise resolves with
 // the full reply plus the adapter's session id (for --resume next turn).
-export function runAgent({ config, text, sessionId, signal, onText }) {
+export function runAgent({ config, text, sessionId, signal, onText, env = {} }) {
   const id = resolveAgent(config);
   const prompt = buildPrompt(text, config);
-  if (id === "hermes") return runHermes({config, prompt, sessionId, signal, onText});
+  if (id === "hermes") return runHermes({config, prompt, sessionId, signal, onText, env});
   const spec = adapter(id, { prompt, session: sessionId, config });
 
   return new Promise((resolve, reject) => {
     const child = spawn(spec.cmd, spec.args, {
       cwd: spec.cwd,
-      env: { ...process.env, NO_COLOR: "1", FORCE_COLOR: "0", TERM: "dumb" },
+      env: { ...process.env, ...env, NO_COLOR: "1", FORCE_COLOR: "0", TERM: "dumb" },
       stdio: ["pipe", "pipe", "pipe"],
       detached: true,
     });
@@ -148,7 +149,7 @@ export function runAgent({ config, text, sessionId, signal, onText }) {
     let emittedPerSource = new Map();
 
     const timer = setTimeout(() => {
-      fail(new Error(`${agentLabel(id)} timed out`));
+      fail(privateError(`${agentLabel(id)} timed out`));
     }, 240000);
 
     function emit(chunk) {
@@ -180,7 +181,7 @@ export function runAgent({ config, text, sessionId, signal, onText }) {
       settled = true;
       clearTimeout(timer);
       if (code !== 0 && (!text_out || spec.requireSuccess)) {
-        reject(new Error(stderr.trim().slice(-400) || `${agentLabel(id)} exited with code ${code}`));
+        reject(privateError(`${agentLabel(id)} exited with code ${code}. Check its provider and permissions.`));
         return;
       }
       if (spec.finalText && !text_out) {
@@ -235,7 +236,7 @@ export function runAgent({ config, text, sessionId, signal, onText }) {
     });
 
     if (signal) {
-      const onAbort = () => fail(new Error("Cancelled"));
+      const onAbort = () => fail(privateError("Cancelled"));
       if (signal.aborted) onAbort();
       else signal.addEventListener("abort", onAbort, { once: true });
     }

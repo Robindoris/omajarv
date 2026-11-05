@@ -109,7 +109,7 @@ function runPiper(bin, args, text, outPath) {
       child.on("error", reject);
       child.on("close", (code) => {
         if (code === 0 && fs.existsSync(outPath) && fs.statSync(outPath).size > 44) resolve();
-        else reject(new Error(stderr.trim().slice(0, 300) || `piper exited ${code}`));
+        else reject(new Error(`Local speech synthesis failed (exit ${code}). Check the Piper voice and installation.`));
       });
       child.stdin.end(text + "\n");
     });

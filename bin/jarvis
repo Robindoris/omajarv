@@ -113,7 +113,7 @@ cmd_start() {
     fi
     sleep 0.25
   done
-  echo "JARVIS: $(url)"
+  echo "JARVIS started. Open the Phone tab or run jarvis qr for an access link."
 }
 
 cmd_stop() {
@@ -153,9 +153,9 @@ cmd_status() {
   fi
   if [[ -n $(tunnel_url) ]]; then
     echo "  tunnel $(tunnel_url)  (cloudflare quick tunnel)"
-    echo "  lan    $(url --lan)"
+    echo "  lan    $(url --lan | sed 's/?.*$//')"
   else
-    echo "  url    $(url)"
+    echo "  url    $(url | sed 's/?.*$//')"
   fi
   if [[ $healthy == true ]]; then
     local_api status 2>/dev/null |

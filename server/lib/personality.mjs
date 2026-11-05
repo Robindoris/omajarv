@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { paths, defaults } from './config.mjs';
+import { writePrivateFile } from './privacy.mjs';
 
 const questions = {
   assistantName: 'Welcome! What would you like to name your assistant?',
@@ -13,6 +14,7 @@ export function createPersonality(config) {
   try { stored = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (error) {
     if (error.code !== 'ENOENT') throw new Error('Unable to read assistant personality settings');
   }
+  if (stored) fs.chmodSync(file, 0o600);
   let state = stored || {assistantName:'JARVIS', userName:'',
     personality:config.systemPrompt !== defaults.systemPrompt ? config.systemPrompt : 'Be calm, helpful and concise. Adapt your tone and level of detail to my requests.',
     stage:'assistantName', revision:0, messages:[], startedAt:Date.now()};
@@ -20,8 +22,7 @@ export function createPersonality(config) {
   const view = () => ({assistantName:state.assistantName, userName:state.userName,
     personality:state.personality, stage:configured() ? state.stage : 'pendingSetup', revision:state.revision});
   const persist = next => {
-    fs.writeFileSync(file + '.tmp', JSON.stringify(next), {mode:0o600});
-    fs.renameSync(file + '.tmp', file);
+    writePrivateFile(file, JSON.stringify(next));
     state = next;
   };
   const checkRevision = revision => {
@@ -41,6 +42,7 @@ export function createPersonality(config) {
   };
   return {
     view,
+    summary() { const {personality, ...summary} = view(); return summary; },
     messages() {
       if (!configured()) return [];
       return state.messages.length ? state.messages : questions[state.stage]

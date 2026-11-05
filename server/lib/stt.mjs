@@ -42,10 +42,10 @@ export function stopWhisperServer() {}
 export function toWav16k(inputPath, outputPath) {
   const ffmpeg = findBin("ffmpeg");
   if (!ffmpeg) throw new Error("ffmpeg is required to convert recordings");
-  const result = spawnSync(ffmpeg, ["-hide_banner", "-loglevel", "error", "-y", "-i", inputPath, "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", outputPath], {
-    encoding: "utf8",
+  const result = spawnSync(ffmpeg, ["-hide_banner", "-loglevel", "error", "-y", "-protocol_whitelist", "pipe", "-i", "pipe:0", "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", outputPath], {
+    encoding: "utf8", input: fs.readFileSync(inputPath), timeout:120000,
   });
-  if (result.status !== 0) throw new Error(`ffmpeg failed: ${(result.stderr || "").trim().slice(0, 300)}`);
+  if (result.status !== 0) throw new Error('Audio conversion failed. Use a supported audio recording.');
   return outputPath;
 }
 
@@ -87,7 +87,7 @@ function transcribeViaCli(wavPath, config) {
   const args = ["-m", model, "-f", wavPath, "-nt", "-np", "-t", "6"];
   if (config.stt.language && config.stt.language !== "auto") args.push("-l", config.stt.language);
   const result = spawnSync(bin, args, { encoding: "utf8", timeout: 120000, maxBuffer: 8 * 1024 * 1024 });
-  if (result.status !== 0) throw new Error(`whisper-cli failed: ${(result.stderr || "").trim().slice(0, 300)}`);
+  if (result.status !== 0) throw new Error('Local speech recognition failed. Check the Whisper model and installation.');
   return result.stdout || "";
 }
 

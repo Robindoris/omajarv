@@ -65,9 +65,9 @@ function launch() {
     "tunnel",
     "--url",
     `https://localhost:${port}`,
-    // The origin is our own self-signed certificate on loopback; the tunnel
-    // still terminates public TLS with a valid Cloudflare certificate.
-    "--no-tls-verify",
+    // Trust this bridge certificate rather than any replacement loopback server.
+    "--origin-ca-pool", paths.certFile,
+    "--origin-server-name", "localhost",
     "--no-autoupdate",
   ];
 
@@ -80,9 +80,9 @@ function launch() {
       currentUrl = match[0];
       state = "up";
       writeUrlFile(currentUrl);
-      console.log(new Date().toISOString(), "tunnel up:", currentUrl);
+      console.log(new Date().toISOString(), "private phone tunnel ready");
     }
-    if (/ERR|failed to|error/i.test(text) && !currentUrl) lastError = text.trim().slice(-300);
+    if (/ERR|failed to|error/i.test(text) && !currentUrl) lastError = 'Cloudflare tunnel connection failed. Check its installation and network connection.';
   };
 
   child.stdout.on("data", consume);

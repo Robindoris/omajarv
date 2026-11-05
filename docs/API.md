@@ -28,6 +28,20 @@ the `X-Jarvis-Token` header. The phone opens the explicit QR access link. Bare h
 `tunnel.state` is `off | starting | up | error`. The hostname is generated per
 cloudflared process, so it changes on every server restart.
 
+## Phone sudo authorization
+
+`GET /api/sudo/pending` returns `{ "requests": [...] }` containing the current
+turn's request ID, command, working directory, sudo prompt, expiry timestamp and SPKI PEM RSA
+public key. `POST /api/sudo/reply` accepts `{ "id": "…", "ciphertext": "…" }`
+or `{ "id": "…", "cancel": true }`. Encrypt UTF-8 password bytes with
+RSA-3072 OAEP using SHA-256 and send the 384-byte result as standard base64. Never
+send a plaintext password field. Replies are one-use; stale or invalid responses
+return 409. These endpoints require the normal access token, are uncached, and
+are unavailable in development HTTP mode (403). POST requires JSON and rejects
+cross-site browser submissions. Passwords are limited to 256 UTF-8 bytes without
+line breaks or NUL. Requests expire after 120 seconds and are cancelled by Stop
+or turn completion. No HTTP response returns a password or private key.
+
 ## `GET /api/personality` and `POST /api/personality`
 
 Both endpoints require the normal bearer credential. GET returns `assistantName`,

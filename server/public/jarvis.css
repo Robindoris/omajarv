@@ -36,7 +36,7 @@
 
 * { box-sizing: border-box; }
 
-#personalityDialog {
+:is(#personalityDialog, #sudoDialog) {
   width: min(92vw, 560px);
   max-height: 85dvh;
   overflow-y: auto;
@@ -46,17 +46,17 @@
   border-radius: 12px;
   padding: 20px;
 }
-#personalityDialog::backdrop { background: rgba(0,0,0,.7); }
-#personalityForm { display: grid; gap: 10px; }
-#personalityForm h2, #personalityForm p { margin: 0 0 8px; }
-#personalityForm p { color: var(--muted); font-size: 13px; }
-#personalityForm input, #personalityForm textarea {
+:is(#personalityDialog, #sudoDialog)::backdrop { background: rgba(0,0,0,.7); }
+:is(#personalityForm, #sudoForm) { display: grid; gap: 10px; }
+:is(#personalityForm, #sudoForm) h2, :is(#personalityForm, #sudoForm) p { margin: 0 0 8px; }
+:is(#personalityForm, #sudoForm) p { color: var(--muted); font-size: 13px; }
+:is(#personalityForm, #sudoForm) input, :is(#personalityForm, #sudoForm) textarea {
   width: 100%; min-width: 0; font: inherit; color: var(--text);
   background: var(--panel); border: 1px solid var(--line-strong); border-radius: 5px; padding: 10px;
 }
-#personalityForm textarea { resize: vertical; min-height: 140px; }
-#personalityForm button { font: inherit; background: var(--panel); border: 1px solid var(--core); border-radius: 5px; padding: 10px 16px; }
-#personalityForm :focus-visible { outline: 2px solid var(--core); outline-offset: 2px; }
+:is(#personalityForm, #sudoForm) textarea { resize: vertical; min-height: 140px; }
+:is(#personalityForm, #sudoForm) button { font: inherit; background: var(--panel); border: 1px solid var(--core); border-radius: 5px; padding: 10px 16px; }
+:is(#personalityForm, #sudoForm) :focus-visible { outline: 2px solid var(--core); outline-offset: 2px; }
 #personalityError { color: var(--red) !important; }
 .personality-actions { display: flex; justify-content: flex-end; gap: 12px; }
 .wordmark { max-width: 40vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1080,3 +1080,7 @@ body[data-view="voice"] .ptt { width: 104px; height: 104px; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; scroll-behavior: auto !important; }
 }
+
+#sudoCommand { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 140px; overflow-y: auto; border: 1px solid var(--line-strong); padding: 10px; }
+#sudoError { color: var(--red) !important; }
+#sudoDirectory { overflow-wrap: anywhere; }

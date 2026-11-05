@@ -28,6 +28,13 @@
     return path + (path.indexOf('?') === -1 ? '?' : '&') + 'k=' + encodeURIComponent(token);
   }
 
+  function apiFetch(path, options) {
+    options = options || {};
+    var headers = new Headers(options.headers || {});
+    if (token) headers.set('X-Jarvis-Token', token);
+    return fetch(path, Object.assign({}, options, {headers:headers, cache:'no-store', referrerPolicy:'no-referrer'}));
+  }
+
   // CSS loads the host theme before first paint; this palette also drives canvas.
   function themeRgb(value, fallback) {
     var match = String(value || '').trim().match(/^#([a-f\d]{6}|[a-f\d]{3})$/i);
@@ -55,7 +62,7 @@
     var ctrl = new AbortController();
     var timer = setTimeout(function () { ctrl.abort(); }, 5000);
     try {
-      var response = await fetch(apiUrl('/api/theme'), { cache: 'no-store', signal: ctrl.signal });
+      var response = await apiFetch('/api/theme', { cache: 'no-store', signal: ctrl.signal });
       if (!response.ok) return;
       var theme = await response.json();
       if (!theme.css || theme.revision === themeRevision) return;
@@ -210,6 +217,111 @@
   var historySignature = "";
   var profile = {assistantName:'JARVIS', userName:''};
   var editingRevision;
+  // Separate from chat/SSE/speech. Only encrypted bytes go to the approval API.
+  var sudoRequest = null;
+  var sudoPolling = false;
+  var sudoSubmitting = false;
+  function sudoUnavailable(message) {
+    if (!sudoRequest) return;
+    $('#sudoPassword').value = '';
+    $('#sudoPassword').disabled = true;
+    $('#sudoSubmit').disabled = true;
+    $('#sudoError').textContent = message;
+  }
+  function clearSudoDialog() {
+    $('#sudoPassword').value = '';
+    $('#sudoDialog').close();
+    sudoRequest = null;
+  }
+  async function pollSudo() {
+    if (sudoPolling || sudoSubmitting || document.visibilityState === 'hidden') return;
+    sudoPolling = true;
+    var ctrl = new AbortController();
+    var timer = setTimeout(function () { ctrl.abort(); }, 6000);
+    try {
+      var res = await apiFetch('/api/sudo/pending', {cache:'no-store', signal:ctrl.signal});
+      if (!res.ok) throw new Error('Unable to check authorization');
+      var data = await res.json();
+      var pending = (data.requests || []).filter(function (request) { return request.expiresAt > Date.now(); });
+      if (sudoRequest) {
+        var stillWaiting = pending.some(function (request) { return request.id === sudoRequest.id; });
+        if (!stillWaiting) {
+          sudoUnavailable(Date.now() >= sudoRequest.expiresAt
+            ? 'This authorization request expired. Cancel and ask JARVIS to retry.'
+            : 'The command is no longer waiting for authorization. Cancel and ask JARVIS to retry.');
+        } else {
+          $('#sudoPassword').disabled = false;
+          $('#sudoSubmit').disabled = false;
+          $('#sudoError').textContent = '';
+        }
+      }
+      if (!sudoRequest && pending.length && !document.querySelector('dialog[open]')) {
+        sudoRequest = pending[0];
+        $('#sudoCommand').textContent = sudoRequest.command;
+        $('#sudoDirectory').textContent = 'Working directory: ' + sudoRequest.cwd;
+        $('#sudoPasswordLabel').textContent = sudoRequest.prompt || 'Computer password';
+        $('#sudoError').textContent = '';
+        $('#sudoPassword').value = '';
+        $('#sudoPassword').disabled = false;
+        $('#sudoSubmit').disabled = false;
+        $('#sudoDialog').showModal();
+        $('#sudoPassword').focus();
+      }
+    } catch (_) { sudoUnavailable('Connection interrupted. Reconnecting; this request has not been cancelled.'); }
+    finally { clearTimeout(timer); sudoPolling = false; }
+  }
+  async function cancelSudo() {
+    var request = sudoRequest;
+    clearSudoDialog();
+    if (request) {
+      try { await apiFetch('/api/sudo/reply', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({id:request.id,cancel:true})}); }
+      catch (_) { /* The request also expires server-side. */ }
+    }
+  }
+  $('#sudoCancel').addEventListener('click', cancelSudo);
+  $('#sudoDialog').addEventListener('cancel', function (event) { event.preventDefault(); cancelSudo(); });
+  $('#sudoForm').addEventListener('submit', async function (event) {
+    event.preventDefault();
+    if (!sudoRequest || sudoSubmitting || $('#sudoSubmit').disabled) return;
+    var request = sudoRequest;
+    var bytes = new TextEncoder().encode($('#sudoPassword').value);
+    $('#sudoPassword').value = '';
+    sudoSubmitting = true;
+    $('#sudoSubmit').disabled = true;
+    $('#sudoCancel').disabled = true;
+    $('#sudoError').textContent = '';
+    try {
+      if (!window.isSecureContext || !window.crypto || !crypto.subtle) throw new Error('Open JARVIS over HTTPS to authorize sudo.');
+      if (!bytes.length || bytes.length > 256 || bytes.some(function (byte) { return byte === 0 || byte === 10 || byte === 13; })) throw new Error('Enter a password of at most 256 UTF-8 bytes, without line breaks.');
+      var pem = request.publicKey.replace(/-----[^-]+-----/g, '').replace(/\s/g, '');
+      var keyBytes = Uint8Array.from(atob(pem), function (char) { return char.charCodeAt(0); });
+      var key = await crypto.subtle.importKey('spki', keyBytes, {name:'RSA-OAEP',hash:'SHA-256'}, false, ['encrypt']);
+      var encrypted = new Uint8Array(await crypto.subtle.encrypt({name:'RSA-OAEP'}, key, bytes));
+      bytes.fill(0);
+      var ciphertext = btoa(String.fromCharCode.apply(null, encrypted));
+      var ctrl = new AbortController();
+      var timer = setTimeout(function () { ctrl.abort(); }, 10000);
+      var res;
+      try {
+        res = await apiFetch('/api/sudo/reply', {method:'POST', headers:{'Content-Type':'application/json'}, signal:ctrl.signal,
+          body:JSON.stringify({id:request.id,ciphertext:ciphertext})});
+      } finally { clearTimeout(timer); }
+      if (!res.ok) throw new Error('Authorization expired or was rejected. Wait for a new request.');
+      clearSudoDialog();
+    } catch (error) { $('#sudoError').textContent = error.name === 'AbortError' ? 'Connection timed out. Check the pending request before retrying.' : error.message; }
+    finally {
+      bytes.fill(0);
+      sudoSubmitting = false;
+      $('#sudoSubmit').disabled = false;
+      $('#sudoCancel').disabled = false;
+    }
+  });
+  window.setInterval(pollSudo, 1500);
+  window.addEventListener('pagehide', function () { $('#sudoPassword').value = ''; });
+  document.addEventListener('visibilitychange', function () {
+    $('#sudoPassword').value = '';
+    if (document.visibilityState !== 'hidden') pollSudo();
+  });
   function applyProfile(value) {
     if (!value) return;
     profile = value;
@@ -220,7 +332,7 @@
   $('#personalityBtn').addEventListener('click', async function () {
     $('#personalityError').textContent = '';
     try {
-      var res = await fetch(apiUrl('/api/personality'), {cache:'no-store'});
+      var res = await apiFetch('/api/personality', {cache:'no-store'});
       if (!res.ok) throw new Error(parseErrorText(await res.text(), res.status));
       var data = await res.json();
       applyProfile(data);
@@ -237,7 +349,7 @@
     $('#personalitySave').disabled = true;
     $('#personalityError').textContent = '';
     try {
-      var res = await fetch(apiUrl('/api/personality'), {method:'POST', headers:{'Content-Type':'application/json'},
+      var res = await apiFetch('/api/personality', {method:'POST', headers:{'Content-Type':'application/json'},
         body:JSON.stringify({assistantName:$('#assistantNameInput').value, personality:$('#personalityInput').value,
           userName:$('#userNameInput').value, revision:editingRevision})});
       if (!res.ok) throw new Error(parseErrorText(await res.text(), res.status));
@@ -460,7 +572,7 @@
     var ctrl = new AbortController();
     var timer = setTimeout(function () { ctrl.abort(); }, 6000);
     try {
-      var res = await fetch(apiUrl('/api/history'), { cache: 'no-store', signal: ctrl.signal });
+      var res = await apiFetch('/api/history', { cache: 'no-store', signal: ctrl.signal });
       if (!res.ok) return;
       var data = await res.json();
       if (runId !== generation || (state !== S.IDLE && state !== S.BOOT)) return;
@@ -487,7 +599,7 @@
     var timeoutId = setTimeout(function () { ctrl.abort(); }, 6000);
 
     try {
-      var res = await fetch(apiUrl('/api/status'), { cache: 'no-store', signal: ctrl.signal });
+      var res = await apiFetch('/api/status', { cache: 'no-store', signal: ctrl.signal });
       if (!res.ok) throw new Error('HTTP ' + res.status);
       var data = await res.json();
       if (!data || typeof data !== 'object') throw new Error('BAD STATUS');
@@ -1107,7 +1219,7 @@
     setState(S.TRANSCRIBING);
 
     try {
-      var res = await fetch(apiUrl('/api/stt'), {
+      var res = await apiFetch('/api/stt', {
         method: 'POST',
         headers: { 'Content-Type': mime || blob.type || 'application/octet-stream' },
         body: blob
@@ -1239,7 +1351,7 @@
 
     async function run() {
       try {
-        var res = await fetch(apiUrl('/api/chat'), {
+        var res = await apiFetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ text: cleanText, profileRevision:profile.revision }),
@@ -1320,7 +1432,7 @@
     }
 
     run().catch(function (err) {
-      if (window.console && console.error) console.error('[jarvis] chat failure', err);
+      if (window.console && console.error) console.error('[jarvis] chat request failed');
     });
   }
 
@@ -1402,7 +1514,7 @@
   async function synthSpeech(text, runId) {
     try {
       if (runId !== generation) return;
-      var res = await fetch(apiUrl('/api/tts'), {
+      var res = await apiFetch('/api/tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: text })
@@ -1706,7 +1818,7 @@
       abortRecording();
       cancelRun();
       setState(S.IDLE);
-      fetch(apiUrl('/api/chat/stop'), { method: 'POST' }).then(loadHistory).catch(function () {});
+      apiFetch('/api/chat/stop', { method: 'POST' }).then(loadHistory).catch(function () {});
       flashStatus('STOPPED', 900);
     });
   }
@@ -1719,7 +1831,7 @@
     if (el.resetBtn) el.resetBtn.disabled = true;
 
     try {
-      var res = await fetch(apiUrl('/api/session/reset'), { method: 'POST' });
+      var res = await apiFetch('/api/session/reset', { method: 'POST' });
       if (!res.ok) {
         var body = await res.text().catch(function () { return ''; });
         throw new Error(parseErrorText(body, res.status));
@@ -1829,8 +1941,8 @@
   window.addEventListener('unhandledrejection', function (event) {
     var reason = event.reason;
     if (reason && reason.name === 'AbortError') return;
-    if (window.console && console.error) console.error('[jarvis] unhandled rejection', reason);
-    addSystem('SYSTEM: ' + (reason && reason.message ? reason.message : 'UNEXPECTED ERROR'), 'error');
+    if (window.console && console.error) console.error('[jarvis] unexpected error');
+    addSystem('An unexpected error occurred. Retry the operation.', 'error');
   });
 
   /* ------------------------------------------------------------------ */

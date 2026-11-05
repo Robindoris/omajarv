@@ -2,13 +2,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { paths } from './config.mjs';
+import { writePrivateFile } from './privacy.mjs';
 const file = path.join(paths.stateDir, 'history.json');
 let histories;
-try { histories = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { histories = {}; }
+try { histories = JSON.parse(fs.readFileSync(file, 'utf8')); fs.chmodSync(file, 0o600); } catch { histories = {}; }
 function save() {
-  fs.mkdirSync(paths.stateDir, { recursive: true });
-  fs.writeFileSync(file + '.tmp', JSON.stringify(histories), { mode: 0o600 });
-  fs.renameSync(file + '.tmp', file);
+  writePrivateFile(file, JSON.stringify(histories));
 }
 export function historyFor(agent) { return histories[agent] || []; }
 export function appendHistory(agent, role, text) {

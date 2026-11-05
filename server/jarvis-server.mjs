@@ -25,6 +25,8 @@ import { agentStatus, forgetSessions, rememberedSession, rememberSession, runAge
 
 import { historyFor, appendHistory, clearHistory } from "./lib/history.mjs";
 import { createPersonality } from "./lib/personality.mjs";
+import { createSudoSession } from "./lib/sudo.mjs";
+import { publicAgentError } from "./lib/privacy.mjs";
 
 import { readTheme, themeStyles } from "./lib/theme.mjs";
 
@@ -69,11 +71,11 @@ function ensureCertificate() {
     { encoding: "utf8" },
   );
   if (result.status !== 0) {
-    log("certificate generation failed:", (result.stderr || "").trim().slice(0, 300));
+    log("certificate generation failed");
     return false;
   }
   fs.chmodSync(paths.keyFile, 0o600);
-  log("generated self-signed certificate for", san);
+  log("generated local HTTPS certificate");
   return true;
 }
 
@@ -192,6 +194,7 @@ async function statusPayload() {
 let turnCount = 0;
 let chatBusy = false;
 let activeAbort = null;
+let sudoSession = null;
 
 // -------------------------------------------------------------------- routes
 
@@ -199,6 +202,21 @@ async function handleApi(req, res, pathname, params) {
   if (!authorized(req, params)) return sendJson(res, 401, { ok: false, error: "Bad or missing token" });
 
   if (pathname === "/api/health") return sendJson(res, 200, { ok: true });
+  if (pathname === "/api/sudo/pending" && req.method === "GET") {
+    if (useHttp) return sendJson(res, 403, {error:"Phone sudo authorization requires HTTPS."});
+    return sendJson(res, 200, {requests:sudoSession?.list() || []});
+  }
+  if (pathname === "/api/sudo/reply" && req.method === "POST") {
+    if (useHttp) return sendJson(res, 403, {error:"Phone sudo authorization requires HTTPS."});
+    if (!String(req.headers['content-type'] || '').startsWith('application/json') || req.headers['sec-fetch-site'] === 'cross-site') {
+      return sendJson(res, 403, {error:"Invalid authorization request."});
+    }
+    try {
+      const payload = JSON.parse((await readBody(req, 4096)).toString());
+      if (!sudoSession?.reply(payload)) return sendJson(res, 409, {error:"Authorization expired or invalid. Refresh the pending request."});
+      return sendJson(res, 200, {ok:true});
+    } catch { return sendJson(res, 400, {error:"Invalid authorization response."}); }
+  }
   if (pathname === "/api/theme" && req.method === "GET") return sendJson(res, 200, readTheme());
   if (pathname === "/api/status") return sendJson(res, 200, await statusPayload());
   if (pathname === "/api/personality" && req.method === "GET") return sendJson(res, 200, personality.view());
@@ -209,13 +227,13 @@ async function handleApi(req, res, pathname, params) {
       const profile = personality.update(payload);
       forgetSessions();
       return sendJson(res, 200, profile);
-    } catch (error) { return sendJson(res, error.status || 400, {error:error.message}); }
+    } catch (error) { return sendJson(res, error.status || 400, {error:error.status ? error.message : 'Invalid settings request or unable to save settings.'}); }
   }
 
   if (pathname === "/api/history" && req.method === "GET") {
     const agent = agentStatus(config);
     const messages = [...historyFor(agent.id), ...personality.messages()].sort((a, b) => a.at - b.at);
-    return sendJson(res, 200, { ok: true, agent: agent.id, messages, busy: chatBusy, profile:personality.view() });
+    return sendJson(res, 200, { ok: true, agent: agent.id, messages, busy: chatBusy, profile:personality.summary() });
   }
   if (pathname === "/api/chat/stop" && req.method === "POST") {
     activeAbort?.abort();
@@ -239,8 +257,8 @@ async function handleApi(req, res, pathname, params) {
       if (!result.text) return sendJson(res, 200, { ok: false, error: "I did not catch that." , text: "", ms: result.ms });
       return sendJson(res, 200, { ok: true, text: result.text, ms: result.ms });
     } catch (error) {
-      log("stt error:", error.message);
-      return sendJson(res, 500, { ok: false, error: error.message });
+      log("speech recognition request failed");
+      return sendJson(res, 500, { ok: false, error: 'Speech recognition failed. Check the recording and local voice setup.' });
     }
   }
 
@@ -255,8 +273,8 @@ async function handleApi(req, res, pathname, params) {
       });
       return res.end(wav);
     } catch (error) {
-      log("tts error:", error.message);
-      return sendJson(res, 500, { ok: false, error: error.message });
+      log("speech synthesis request failed");
+      return sendJson(res, 500, { ok: false, error: 'Speech synthesis failed. Check local voice setup.' });
     }
   }
 
@@ -277,7 +295,7 @@ async function handleApi(req, res, pathname, params) {
       forgetSessions();
       res.writeHead(200, {"content-type":"text/event-stream; charset=utf-8", "cache-control":"no-store"});
       res.write(`event: token\ndata: ${JSON.stringify({text:reply})}\n\n`);
-      return res.end(`event: done\ndata: ${JSON.stringify({text:reply, profile:personality.view()})}\n\n`);
+      return res.end(`event: done\ndata: ${JSON.stringify({text:reply, profile:personality.summary()})}\n\n`);
     }
     if (payload.reset) { forgetSessions(); clearHistory(); turnCount = 0; }
     chatBusy = true;
@@ -313,8 +331,10 @@ async function handleApi(req, res, pathname, params) {
     send("meta", { agent: agent.id, label: agent.label, session: rememberedSession(agent.id) });
 
     try {
+      if (!useHttp) sudoSession = await createSudoSession({signal:abort.signal});
       const result = await runAgent({
-        config: {...config, systemPrompt:personality.prompt()},
+        config: {...config, systemPrompt:personality.prompt() + (sudoSession ? '\n\n' + sudoSession.instruction : '')},
+        env: sudoSession?.env,
         text,
         sessionId: rememberedSession(agent.id),
         signal: abort.signal,
@@ -323,16 +343,20 @@ async function handleApi(req, res, pathname, params) {
           send("token", { text: chunk });
         },
       });
+      await sudoSession?.waitForPending();
       if (abort.signal.aborted) throw new Error("Stopped");
       rememberSession(agent.id, result.session);
       appendHistory(agent.id, "assistant", reply.trim());
       turnCount += 1;
       send("done", { text: reply.trim(), ms: Date.now() - started, session: result.session, agent: result.agent });
     } catch (error) {
-      log("chat error:", error.message);
-      appendHistory(agent.id, "system", abort.signal.aborted ? "Stopped" : error.message);
-      send("error", { error: error.message });
+      const message = abort.signal.aborted ? 'Stopped' : publicAgentError(error);
+      log(abort.signal.aborted ? 'chat stopped' : 'agent request failed');
+      appendHistory(agent.id, "system", message);
+      send("error", { error: message });
     } finally {
+      sudoSession?.close();
+      sudoSession = null;
       clearInterval(heartbeat);
       activeAbort = null;
       chatBusy = false;
@@ -352,6 +376,8 @@ async function handler(req, res) {
 
   res.setHeader("x-content-type-options", "nosniff");
   res.setHeader("referrer-policy", "no-referrer");
+  res.setHeader("content-security-policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'");
+  res.setHeader("x-frame-options", "DENY");
 
   try {
     if (pathname === "/theme.css" && req.method === "GET") {
@@ -377,7 +403,7 @@ async function handler(req, res) {
     if (req.method !== "GET" && req.method !== "HEAD") return sendJson(res, 405, { ok: false, error: "Method not allowed" });
     return serveStatic(req, res, pathname);
   } catch (error) {
-    log("request error:", error.message);
+    log("request failed");
     if (!res.headersSent) sendJson(res, 500, { ok: false, error: "Internal error" });
     else res.end();
   }
@@ -407,8 +433,8 @@ server.listen(config.port, config.host, () => {
   log("phone access: open the JARVIS Phone tab or run jarvis qr (access links are not logged)");
   const agent = agentStatus(config);
   log("agent:", agent.id, agent.ready ? "(ready)" : "(not installed!)");
-  log("stt:", JSON.stringify(sttStatus(config)));
-  log("tts:", JSON.stringify(ttsStatus(config)));
+  log("stt ready:", sttStatus(config).ready);
+  log("tts ready:", ttsStatus(config).ready);
   if (config.tunnel?.enabled === true) {
     startTunnel(config);
     log("cloudflare quick tunnel: starting (the address rotates on every restart)");
@@ -427,6 +453,7 @@ server.on("error", (error) => {
 
 const shutdown = (signal) => {
   log("shutting down:", signal);
+  sudoSession?.close();
   stopWhisperServer();
   stopTunnel();
   serveServer.close();

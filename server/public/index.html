@@ -12,7 +12,7 @@
   <meta name="robots" content="noindex, nofollow">
   <title>J.A.R.V.I.S.</title>
   <link rel="apple-touch-icon" href="/icon-192.png">
-  <link rel="stylesheet" href="jarvis.css?v=iphone-layout-2">
+  <link rel="stylesheet" href="jarvis.css?v=privacy-audit-1">
   <link rel="stylesheet" href="/theme.css">
 </head>
 <body data-state="boot" data-view="chat">
@@ -60,6 +60,19 @@
         <p>Applies to desktop and phone on your next request.</p>
         <p id="personalityError" role="status"></p>
         <div class="personality-actions"><button id="personalityCancel" type="button">Cancel</button><button id="personalitySave" type="submit">Save</button></div>
+      </form>
+    </dialog>
+    <dialog id="sudoDialog" aria-labelledby="sudoTitle">
+      <form id="sudoForm" autocomplete="off">
+        <h2 id="sudoTitle">Administrator permission</h2>
+        <p>Review this command before entering your computer password. Never put your password in the conversation.</p>
+        <pre id="sudoCommand"></pre>
+        <p id="sudoDirectory"></p>
+        <label id="sudoPasswordLabel" for="sudoPassword">Computer password</label>
+        <input id="sudoPassword" type="password" required maxlength="128" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
+        <p>Encrypted for the local sudo helper. Used for this request only.</p>
+        <p id="sudoError" role="status"></p>
+        <div class="personality-actions"><button id="sudoCancel" type="button">Cancel</button><button id="sudoSubmit" type="submit">Authorize once</button></div>
       </form>
     </dialog>
     <main class="stage">
@@ -143,6 +156,6 @@
   </div>
 
   <noscript><div class="noscript">J.A.R.V.I.S. requires JavaScript.</div></noscript>
-  <script src="jarvis.js?v=iphone-layout-2"></script>
+  <script src="jarvis.js?v=privacy-audit-1"></script>
 </body>
 </html>

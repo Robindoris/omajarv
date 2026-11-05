@@ -139,6 +139,28 @@ secrets if asked—JARVIS cannot guarantee against that.
 Read the [privacy and data-flow description](PRIVACY.md) and [security review](SECURITY.md)
 before exposing the bridge or enabling full access.
 
+## Phone sudo authorization
+
+When an agent uses JARVIS's sudo helper during a chat, the phone opens an
+**Administrator permission** dialog showing the exact arguments and working
+directory. Review the command, then enter your computer password there and choose
+**Authorize once**, or cancel. Never type a password into the conversation.
+
+The phone encrypts the password for a short-lived local askpass helper. The bridge
+relays ciphertext; only that helper decrypts it and writes it to sudo's private
+password pipe. Passwords are not saved in settings, transcripts, agent input or
+normal logs. Requests expire after two minutes, and Stop closes pending requests.
+HTTPS is required; development HTTP mode disables this feature. No sudoers or
+system permission changes are installed, and the agent's existing tool permissions
+still apply. Already passwordless commands can run without a password dialog.
+
+This is a separate password transport, not isolation from a hostile local agent:
+a full-access agent runs as your Linux user and can inspect that user's processes
+or modify local helpers. Use this only with agents and privileged commands you
+trust. Agent tools must use the provided helper; commands that bypass it, or run
+on another machine or in a container without access to the helper, cannot show
+this phone dialog. Privileged command output still returns to the coding agent.
+
 ## Configuration and useful commands
 
 After setup, your first conversation asks what to name the assistant, how it should
@@ -200,6 +222,7 @@ node tests/integration.mjs
 node tests/agents.mjs        # OpenCode/Hermes transport, sessions and Stop
 node tests/local-privacy.mjs
 node tests/personality.mjs
+node tests/sudo.mjs          # encrypted password transport; no real sudo
 node tests/theme-browser.mjs  # requires Chromium
 omarchy plugin validate .
 ```
