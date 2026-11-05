@@ -17,6 +17,7 @@ fs.writeFileSync(path.join(home,'bin/codex'),`#!/usr/bin/env node
 let prompt='';
 process.stdin.on('data',chunk=>prompt+=chunk);
 process.stdin.on('end',()=>{
+ require('fs').writeFileSync(process.env.HOME + '/agent-prompt', prompt);
  if(prompt.includes('slow request')) { setTimeout(()=>process.exit(),30000); return; }
  console.log(JSON.stringify({type:'thread.started',thread_id:'integration-session'}));
  console.log(JSON.stringify({type:'item.completed',item:{id:'reply',type:'agent_message',text:'Hello from the test agent.'}}));
@@ -63,9 +64,30 @@ assert.equal(manifest.display,'standalone');
 assert.equal(new URL(manifest.start_url, 'https://jarvis.test').searchParams.get('k'),fs.readFileSync(path.join(state,'token'),'utf8').trim());
 for(const icon of manifest.icons) assert.equal((await api(icon.src,undefined,false)).status,200);
 assert.equal((await api('/sw.js',undefined,false)).status,200);
+assert.equal((await api('/api/personality',undefined,false)).status,401);
+assert.equal((await api('/api/personality',{},false)).status,401);
+let profile=JSON.parse((await api('/api/personality')).text);
+assert.equal(profile.stage,'assistantName');
+assert.match(JSON.parse((await api('/api/history')).text).messages[0].text,/name your assistant/);
+assert.equal((await api('/api/chat',{text:'stale answer',profileRevision:999})).status,409);
+for (const [answer,nextStage] of [['Nova','personality'],['Be friendly, direct and answer in Slovak.','userName'],['Alex','complete']]) {
+ const response=await api('/api/chat',{text:answer,profileRevision:profile.revision});
+ assert.equal(response.status,200,response.text);
+ assert.match(response.text,/event: done/);
+ profile=JSON.parse((await api('/api/personality')).text);
+ assert.equal(profile.stage,nextStage);
+}
+assert.equal(fs.existsSync(path.join(home,'agent-prompt')),false,'onboarding must not invoke the agent');
+assert.equal(fs.statSync(path.join(state,'personality.json')).mode & 0o777,0o600);
+assert.equal((await api('/api/personality',{...profile,personality:''})).status,400);
+assert.equal((await api('/api/personality',{...profile,revision:0})).status,409);
+await api('/api/session/reset',{});
 assert.deepEqual(JSON.parse((await api('/api/history')).text).messages,[]);
 const reply=await api('/api/chat',{text:'hello'});
 assert.match(reply.text,/Hello from the test agent/);
+assert.match(fs.readFileSync(path.join(home,'agent-prompt'),'utf8'),/Your name is Nova/);
+assert.match(fs.readFileSync(path.join(home,'agent-prompt'),'utf8'),/Alex/);
+assert.match(fs.readFileSync(path.join(home,'agent-prompt'),'utf8'),/answer in Slovak/);
 assert.equal(JSON.parse((await api('/api/history')).text).messages.length,2);
 assert.equal(JSON.parse((await api('/api/status')).text).agent.access,'Full access');
 const exit=once(server,'exit');server.kill('SIGTERM');await exit;
@@ -74,6 +96,14 @@ for(let i=0;i<100&&!logs.includes('listening on');i++)await new Promise(r=>setTi
 assert.equal(JSON.parse((await api('/api/history')).text).messages.length,2);
 helper=spawn(process.execPath,[path.join(root,'server/desktop.mjs')],{env,stdio:['pipe','pipe','pipe']});
 let output='';let errors='';helper.stdout.on('data',b=>output+=b);helper.stderr.on('data',b=>errors+=b);
+helper.stdin.write('{"action":"personality"}\n');
+for(let i=0;i<100&&!output.includes('"event":"personality"');i++)await new Promise(r=>setTimeout(r,20));
+assert.match(output,/Nova/);
+profile=JSON.parse((await api('/api/personality')).text);
+helper.stdin.write(JSON.stringify({action:'savePersonality',profile:{...profile,personality:'Be playful and brief.'}})+'\n');
+for(let i=0;i<100&&!output.includes('"saved":true');i++)await new Promise(r=>setTimeout(r,20));
+assert.match(output,/"saved":true/);
+assert.equal(JSON.parse((await api('/api/personality')).text).personality,'Be playful and brief.');
 helper.stdin.write(JSON.stringify({action:'send',text:'desktop hello'})+'\n');
 for(let i=0;i<100&&!output.includes('"event":"done"');i++)await new Promise(r=>setTimeout(r,50));
 assert.match(output,/"event":"done"/,errors+output);
@@ -82,6 +112,7 @@ assert.equal(JSON.parse((await api('/api/history')).text).messages.length,4);
 const pending = api('/api/chat', {text:'slow request'});
 for(let i=0;i<100;i++){ if(JSON.parse((await api('/api/status')).text).chatBusy)break; await new Promise(r=>setTimeout(r,20)); }
 assert.equal((await api('/api/session/reset',{})).status,409);
+assert.equal((await api('/api/personality',{...profile,revision:profile.revision+1})).status,409);
 assert.equal((await api('/api/chat',{text:'second request'})).status,409);
 assert.equal((await api('/api/chat/stop',{})).status,200);
 assert.match((await pending).text,/Stopped/);
@@ -98,5 +129,5 @@ assert.ok(payload.matrix.every(row=>row.length===payload.size));
 fs.writeFileSync(path.join(home,'qr.png'),Buffer.from(payload.image.split(',')[1],'base64'));
 const decoded=spawnSync('zbarimg',['--quiet','--raw',path.join(home,'qr.png')],{encoding:'utf8'});
 assert.equal(decoded.stdout.trim(),payload.url);
-console.log('PASS: authentication, chat streaming, shared persistent history, desktop pinned TLS, reset, cross-device Stop, concurrent-request rejection, and full QR decode.');
+console.log('PASS: authenticated personality editing, ordered onboarding, desktop/phone sync, persistence, chat streaming, history, pinned TLS, reset, cross-device Stop and QR decode.');
 } catch(error){console.error(logs);throw error;} finally {helper?.kill('SIGTERM');const stopped=server.exitCode===null?once(server,'exit'):Promise.resolve();server.kill('SIGTERM');await stopped;fs.rmSync(home,{recursive:true,force:true});}

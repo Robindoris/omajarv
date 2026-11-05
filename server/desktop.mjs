@@ -13,6 +13,7 @@ const token = readToken();
 const emit = (event, data = {}) => process.stdout.write(JSON.stringify({ event, ...data }) + '\n');
 let operation = false, recording = null, playback = null, recordTimer = null, generation = 0;
 let readAloud = false;
+let profileRevision;
 const requests = new Set();
 const temp = fs.mkdtempSync(path.join(paths.tmp, 'desktop-'));
 function request(endpoint, body, contentType = 'application/json', onEvent) {
@@ -57,6 +58,7 @@ function request(endpoint, body, contentType = 'application/json', onEvent) {
 }
 async function snapshot() {
   const data = JSON.parse(await request('history'));
+  profileRevision = data.profile?.revision;
   emit('history', data);
 }
 async function speak(text, run) {
@@ -76,7 +78,7 @@ async function chat(text, run) {
   text = String(text || '').trim(); if (!text) return;
   emit('state', { state: 'Thinking' });
   let reply = '', failure = '';
-  await request('chat', JSON.stringify({ text }), 'application/json', (event, data) => {
+  await request('chat', JSON.stringify({ text, profileRevision }), 'application/json', (event, data) => {
     emit(event, data);
     if (event === 'token') reply += data.text || '';
     if (event === 'done') reply = data.text || reply;
@@ -108,6 +110,13 @@ async function finishRecording() {
   finally { if (run === generation) { operation = false; emit('state', { state: 'Ready' }); } }
 }
 async function dispatch(data) {
+  if (data.action === 'personality') return emit('personality', {profile:JSON.parse(await request('personality'))});
+  if (data.action === 'savePersonality') {
+    if (operation || recording) throw new Error('Stop the current request before changing personality.');
+    const profile = JSON.parse(await request('personality', JSON.stringify(data.profile)));
+    emit('personality', {profile, saved:true});
+    return snapshot();
+  }
   if (data.action === 'history') return snapshot();
   if (data.action === 'readAloud') { readAloud = data.enabled === true; if (!readAloud) playback?.kill('SIGTERM'); return; }
   if (data.action === 'stop') {

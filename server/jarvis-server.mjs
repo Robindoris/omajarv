@@ -24,6 +24,7 @@ import { synthesize, ttsStatus } from "./lib/tts.mjs";
 import { agentStatus, forgetSessions, rememberedSession, rememberSession, runAgent } from "./lib/agent.mjs";
 
 import { historyFor, appendHistory, clearHistory } from "./lib/history.mjs";
+import { createPersonality } from "./lib/personality.mjs";
 
 import { readTheme, themeStyles } from "./lib/theme.mjs";
 
@@ -39,6 +40,7 @@ const useHttp = flag("--http") || process.env.JARVIS_HTTP === "1";
 
 ensureDirs();
 const config = loadConfig();
+const personality = createPersonality(config);
 if (option("--port")) config.port = Number(option("--port"));
 const token = readToken();
 
@@ -199,10 +201,21 @@ async function handleApi(req, res, pathname, params) {
   if (pathname === "/api/health") return sendJson(res, 200, { ok: true });
   if (pathname === "/api/theme" && req.method === "GET") return sendJson(res, 200, readTheme());
   if (pathname === "/api/status") return sendJson(res, 200, await statusPayload());
+  if (pathname === "/api/personality" && req.method === "GET") return sendJson(res, 200, personality.view());
+  if (pathname === "/api/personality" && req.method === "POST") {
+    try {
+      const payload = JSON.parse((await readBody(req, MAX_JSON)).toString());
+      if (chatBusy) return sendJson(res, 409, {error:"Stop the current reply before changing personality."});
+      const profile = personality.update(payload);
+      forgetSessions();
+      return sendJson(res, 200, profile);
+    } catch (error) { return sendJson(res, error.status || 400, {error:error.message}); }
+  }
 
   if (pathname === "/api/history" && req.method === "GET") {
     const agent = agentStatus(config);
-    return sendJson(res, 200, { ok: true, agent: agent.id, messages: historyFor(agent.id), busy: chatBusy });
+    const messages = [...historyFor(agent.id), ...personality.messages()].sort((a, b) => a.at - b.at);
+    return sendJson(res, 200, { ok: true, agent: agent.id, messages, busy: chatBusy, profile:personality.view() });
   }
   if (pathname === "/api/chat/stop" && req.method === "POST") {
     activeAbort?.abort();
@@ -213,6 +226,7 @@ async function handleApi(req, res, pathname, params) {
     if (chatBusy) return sendJson(res, 409, { ok: false, error: "Stop the current reply before starting a new conversation." });
     forgetSessions();
     clearHistory();
+    personality.resetTranscript();
     turnCount = 0;
     return sendJson(res, 200, { ok: true });
   }
@@ -256,6 +270,15 @@ async function handleApi(req, res, pathname, params) {
     const text = String(payload.text || "").trim().slice(0, config.maxTextChars);
     if (!text) return sendJson(res, 400, { ok: false, error: "Empty message" });
     if (chatBusy) return sendJson(res, 409, { ok: false, error: "JARVIS is still answering the previous request." });
+    if (personality.answering()) {
+      let reply;
+      try { reply = personality.answer(text, payload.profileRevision); }
+      catch (error) { return sendJson(res, error.status || 400, {error:error.message}); }
+      forgetSessions();
+      res.writeHead(200, {"content-type":"text/event-stream; charset=utf-8", "cache-control":"no-store"});
+      res.write(`event: token\ndata: ${JSON.stringify({text:reply})}\n\n`);
+      return res.end(`event: done\ndata: ${JSON.stringify({text:reply, profile:personality.view()})}\n\n`);
+    }
     if (payload.reset) { forgetSessions(); clearHistory(); turnCount = 0; }
     chatBusy = true;
 
@@ -291,7 +314,7 @@ async function handleApi(req, res, pathname, params) {
 
     try {
       const result = await runAgent({
-        config,
+        config: {...config, systemPrompt:personality.prompt()},
         text,
         sessionId: rememberedSession(agent.id),
         signal: abort.signal,

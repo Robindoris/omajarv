@@ -141,10 +141,22 @@ before exposing the bridge or enabling full access.
 
 ## Configuration and useful commands
 
+After setup, your first conversation asks what to name the assistant, how it should
+behave, and what to call you, in that order. These answers are saved locally and
+shared between desktop and phone. You can type or speak your answers.
+
+Open **Personality** in the bar panel or phone interface to edit both names and the
+personality prompt later. Changes apply on the next request without restarting the
+bridge. They start fresh agent sessions so previous personality instructions do
+not carry over; your visible transcript is kept. New conversation clears chat
+history while keeping your names and personality. If settings changed on another
+device, close and reopen the editor before saving again.
+
 | Location | Contents |
 | --- | --- |
 | `~/.config/omarchy-jarvis/config.json` | Agent, networking, voice and model settings |
 | `~/.local/state/omarchy-jarvis/` | Access token, TLS key, agent sessions, local transcript and temporary audio |
+| `~/.local/state/omarchy-jarvis/personality.json` | Assistant name, personality prompt, preferred user name and first-conversation progress |
 | `~/.local/share/omarchy-jarvis/models/` | Models downloaded by setup |
 
 ```bash
@@ -187,6 +199,7 @@ node tests/tailscale.mjs
 node tests/integration.mjs
 node tests/agents.mjs        # OpenCode/Hermes transport, sessions and Stop
 node tests/local-privacy.mjs
+node tests/personality.mjs
 node tests/theme-browser.mjs  # requires Chromium
 omarchy plugin validate .
 ```

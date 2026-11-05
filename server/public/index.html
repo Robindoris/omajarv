@@ -12,7 +12,7 @@
   <meta name="robots" content="noindex, nofollow">
   <title>J.A.R.V.I.S.</title>
   <link rel="apple-touch-icon" href="/icon-192.png">
-  <link rel="stylesheet" href="jarvis.css?v=conversation-2">
+  <link rel="stylesheet" href="jarvis.css?v=iphone-layout-2">
   <link rel="stylesheet" href="/theme.css">
 </head>
 <body data-state="boot" data-view="chat">
@@ -47,7 +47,21 @@
       </div>
     </header>
 
-    <nav class="view-switch" aria-label="Interface view"><button id="chatView" type="button" aria-pressed="true">Conversation</button><button id="voiceView" type="button" aria-pressed="false">Voice</button></nav>
+    <nav class="view-switch" aria-label="Interface view"><button id="chatView" type="button" aria-pressed="true">Conversation</button><button id="voiceView" type="button" aria-pressed="false">Voice</button><button id="personalityBtn" type="button">Personality</button></nav>
+    <dialog id="personalityDialog" aria-labelledby="personalityTitle">
+      <form id="personalityForm">
+        <h2 id="personalityTitle">Personality</h2>
+        <label for="assistantNameInput">Assistant name</label>
+        <input id="assistantNameInput" maxlength="80" required autocomplete="off">
+        <label for="personalityInput">Personality prompt</label>
+        <textarea id="personalityInput" maxlength="8000" rows="7" required></textarea>
+        <label for="userNameInput">Your name</label>
+        <input id="userNameInput" maxlength="80" required autocomplete="off">
+        <p>Applies to desktop and phone on your next request.</p>
+        <p id="personalityError" role="status"></p>
+        <div class="personality-actions"><button id="personalityCancel" type="button">Cancel</button><button id="personalitySave" type="submit">Save</button></div>
+      </form>
+    </dialog>
     <main class="stage">
       <div class="reactor-wrap">
         <canvas id="reactor" aria-hidden="true"></canvas>
@@ -129,6 +143,6 @@
   </div>
 
   <noscript><div class="noscript">J.A.R.V.I.S. requires JavaScript.</div></noscript>
-  <script src="jarvis.js?v=conversation-2"></script>
+  <script src="jarvis.js?v=iphone-layout-2"></script>
 </body>
 </html>

@@ -64,6 +64,66 @@ Ui.Panel {
   property bool remoteBusy: false
   property string historyAgent: ""
   property string historySignature: ""
+  property var profile: ({ assistantName: "JARVIS", userName: "" })
+  property bool savingPersonality: false
+  Controls.Popup {
+    id: personalityEditor
+    property int revision: 0
+    parent: panelContent
+    anchors.centerIn: parent
+    width: Math.max(200, panelContent.width - Style.space(16))
+    height: Math.min(panelContent.height - Style.space(16), Style.space(520))
+    modal: true
+    padding: Style.space(16)
+    background: Rectangle { color: Color.background; border.color: Color.accent; radius: Style.cornerRadius }
+    contentItem: Controls.ScrollView {
+      clip: true
+      contentWidth: availableWidth
+      ColumnLayout {
+        width: parent.width
+        spacing: Style.space(10)
+        Text { text: "Personality"; color: root.fg; font.family: root.fontFamily; font.pixelSize: Style.font.title }
+        Text { text: "Assistant name"; color: root.fg; font.family: root.fontFamily }
+        Controls.TextField {
+          id: assistantNameField; Layout.fillWidth: true; maximumLength: 80; color: root.fg; selectByMouse: true; Accessible.name: "Assistant name"
+          background: Rectangle { color: "transparent"; border.color: Color.muted; radius: Style.cornerRadius }
+        }
+        Text { text: "Personality prompt"; color: root.fg; font.family: root.fontFamily }
+        Controls.TextArea {
+          id: personalityField
+          Layout.fillWidth: true
+          Layout.preferredHeight: Style.space(150)
+          wrapMode: TextEdit.Wrap
+          color: root.fg
+          selectByMouse: true
+          textFormat: TextEdit.PlainText
+          onTextChanged: { if (text.length > 8000) text = text.slice(0, 8000) }
+          background: Rectangle { color: "transparent"; border.color: Color.muted; radius: Style.cornerRadius }
+          Accessible.name: "Personality prompt"
+        }
+        Text { text: "Your name"; color: root.fg; font.family: root.fontFamily }
+        Controls.TextField {
+          id: userNameField; Layout.fillWidth: true; maximumLength: 80; color: root.fg; selectByMouse: true; Accessible.name: "Your name"
+          background: Rectangle { color: "transparent"; border.color: Color.muted; radius: Style.cornerRadius }
+        }
+        Text { Layout.fillWidth: true; text: "Applies to desktop and phone on your next request."; wrapMode: Text.WordWrap; color: Color.muted; font.family: root.fontFamily }
+        Text { Layout.fillWidth: true; visible: root.notice !== ""; text: root.notice; wrapMode: Text.WordWrap; color: Color.urgent; font.family: root.fontFamily }
+        RowLayout {
+          Layout.fillWidth: true
+          Ui.Button { text: "Cancel"; bordered: true; enabled: !root.savingPersonality; onClicked: personalityEditor.close() }
+          Ui.Button {
+            text: root.savingPersonality ? "Saving…" : "Save"
+            bordered: true
+            enabled: !root.savingPersonality && !root.working && !root.remoteBusy
+            onClicked: {
+              root.savingPersonality = true
+              root.command({action: "savePersonality", profile: {assistantName: assistantNameField.text, personality: personalityField.text, userName: userNameField.text, revision: personalityEditor.revision}})
+            }
+          }
+        }
+      }
+    }
+  }
   readonly property var agent: status.agent || ({})
   readonly property var tunnel: status.tunnel || ({})
   readonly property bool running: status.running === true
@@ -83,6 +143,7 @@ Ui.Panel {
     Qt.callLater(function() { if (root.tab === 0) input.forceActiveFocus() })
   }
   function close() {
+    personalityEditor.close()
     if (root.assistantState === "Listening") root.command({ action: "stop" })
     root.controller.hide()
   }
@@ -118,7 +179,7 @@ Ui.Panel {
     root.loadQr()
   }
   function command(payload) {
-    if (!desktop.running) { root.notice = "Assistant is reconnecting. Try again."; desktop.running = true; return }
+    if (!desktop.running) { root.savingPersonality = false; root.notice = "Assistant is reconnecting. Try again."; desktop.running = true; return }
     desktop.write(JSON.stringify(payload) + "\n")
   }
   function send() {
@@ -138,6 +199,7 @@ Ui.Panel {
       root.command({ action: "readAloud", enabled: root.readAloud })
       root.command({ action: "history" })
     } else if (data.event === "history") {
+      if (data.profile) root.profile = data.profile
       root.remoteBusy = data.busy === true
       if (data.busy && root.working) return
       var signature = JSON.stringify([data.agent, data.messages])
@@ -148,6 +210,18 @@ Ui.Panel {
         root.messages = data.messages || []
         if (!data.busy) root.streamText = ""
         if (follow) Qt.callLater(function() { transcript.positionViewAtEnd() })
+      }
+    } else if (data.event === "personality") {
+      root.profile = data.profile
+      root.savingPersonality = false
+      if (data.saved) { personalityEditor.close(); root.notice = "Personality saved" }
+      else {
+        personalityEditor.revision = data.profile.revision
+        assistantNameField.text = data.profile.assistantName || "JARVIS"
+        personalityField.text = data.profile.personality || ""
+        userNameField.text = data.profile.userName || ""
+        root.notice = ""
+        personalityEditor.open()
       }
     } else if (data.event === "state") {
       root.assistantState = data.state || "Ready"
@@ -165,6 +239,7 @@ Ui.Panel {
       root.assistantState = "Finishing"
       root.streamText = data.text || root.streamText
     } else if (data.event === "error") {
+      root.savingPersonality = false
       root.notice = data.error || "Assistant failed"
       root.lastOutcome = /stop|abort|cancel/i.test(root.notice) ? "Stopped" : "Failed"
     }
@@ -201,6 +276,7 @@ Ui.Panel {
     stdout: SplitParser { onRead: function(line) { try { root.handleEvent(JSON.parse(line)) } catch(e) { root.notice = "Invalid assistant response" } } }
     stderr: StdioCollector { id: desktopErr; waitForEnd: true }
     onExited: function(code) {
+      root.savingPersonality = false
       root.assistantState = "Ready"
       if (code !== 0) root.lastOutcome = "Failed"
       if (code !== 0) root.notice = "Assistant disconnected: " + (desktopErr.text || "restart the bridge").trim().slice(0, 120)
@@ -276,6 +352,7 @@ Ui.Panel {
     contentHeight: panel.fittedContentHeight(Style.space(680))
     Ui.PanelKeyCatcher { id: keyCatcher; anchors.fill: parent; onCloseRequested: root.close() }
     ColumnLayout {
+      id: panelContent
       anchors.fill: parent
       spacing: Style.space(12)
       RowLayout {
@@ -283,9 +360,10 @@ Ui.Panel {
         ColumnLayout {
           Layout.fillWidth: true
           spacing: Style.space(3)
-          Text { text: "J.A.R.V.I.S."; color: root.fg; font.family: root.fontFamily; font.pixelSize: Style.font.title; font.bold: true; font.letterSpacing: 2 }
+          Text { text: root.profile.assistantName || "JARVIS"; color: root.fg; font.family: root.fontFamily; font.pixelSize: Style.font.title; font.bold: true; font.letterSpacing: 2; Layout.fillWidth: true; elide: Text.ElideRight }
           Text { text: root.agent.label || "Omarchy agent"; color: Color.muted; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
         }
+        Ui.Button { text: "Personality"; bordered: true; focusable: true; enabled: root.running; onClicked: root.command({action: "personality"}) }
         Text { text: !root.statusLoaded ? "Checking" : root.running ? "Online" : "Offline"; color: root.running ? Color.accent : Color.muted; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
       }
       RowLayout {
@@ -397,7 +475,7 @@ Ui.Panel {
               required property var modelData
               width: transcript.width - Style.space(12)
               spacing: Style.space(4)
-              Text { text: modelData.role === "user" ? "YOU" : modelData.role === "assistant" ? "JARVIS" : "SYSTEM"; color: modelData.role === "user" ? Color.muted : Color.accent; font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true }
+              Text { text: modelData.role === "user" ? (root.profile.userName || "YOU") : modelData.role === "assistant" ? (root.profile.assistantName || "JARVIS") : "SYSTEM"; color: modelData.role === "user" ? Color.muted : Color.accent; font.family: root.fontFamily; font.pixelSize: Style.font.caption; font.bold: true }
               TextEdit { width: parent.width; text: modelData.text || ""; readOnly: true; selectByMouse: true; wrapMode: TextEdit.Wrap; textFormat: TextEdit.PlainText; color: root.fg; font.family: root.fontFamily; font.pixelSize: Style.font.body }
             }
             footer: Item {
@@ -454,7 +532,7 @@ Ui.Panel {
               Layout.preferredHeight: Style.space(76)
               leftPadding: Style.space(10)
               rightPadding: Style.space(10)
-              placeholderText: "Message JARVIS… (Shift+Enter for a new line)"
+              placeholderText: "Message " + (root.profile.assistantName || "JARVIS") + "… (Shift+Enter for a new line)"
               wrapMode: TextEdit.Wrap
               onTextChanged: {
                 var limit = root.status.limits ? root.status.limits.maxTextChars : 4000

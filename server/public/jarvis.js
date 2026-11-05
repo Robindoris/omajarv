@@ -208,6 +208,46 @@
   var voiceInputReady = true;
   var remoteBusy = false;
   var historySignature = "";
+  var profile = {assistantName:'JARVIS', userName:''};
+  var editingRevision;
+  function applyProfile(value) {
+    if (!value) return;
+    profile = value;
+    document.querySelector('.wordmark').textContent = profile.assistantName;
+    document.title = profile.assistantName;
+    $('#textInput').placeholder = 'Message ' + profile.assistantName + '…';
+  }
+  $('#personalityBtn').addEventListener('click', async function () {
+    $('#personalityError').textContent = '';
+    try {
+      var res = await fetch(apiUrl('/api/personality'), {cache:'no-store'});
+      if (!res.ok) throw new Error(parseErrorText(await res.text(), res.status));
+      var data = await res.json();
+      applyProfile(data);
+      editingRevision = data.revision;
+      $('#assistantNameInput').value = data.assistantName;
+      $('#personalityInput').value = data.personality;
+      $('#userNameInput').value = data.userName;
+      $('#personalityDialog').showModal();
+    } catch (error) { addSystem(error.message); }
+  });
+  $('#personalityCancel').addEventListener('click', function () { $('#personalityDialog').close(); });
+  $('#personalityForm').addEventListener('submit', async function (event) {
+    event.preventDefault();
+    $('#personalitySave').disabled = true;
+    $('#personalityError').textContent = '';
+    try {
+      var res = await fetch(apiUrl('/api/personality'), {method:'POST', headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({assistantName:$('#assistantNameInput').value, personality:$('#personalityInput').value,
+          userName:$('#userNameInput').value, revision:editingRevision})});
+      if (!res.ok) throw new Error(parseErrorText(await res.text(), res.status));
+      applyProfile(await res.json());
+      $('#personalityDialog').close();
+      historySignature = '';
+      loadHistory();
+    } catch (error) { $('#personalityError').textContent = error.message; }
+    finally { $('#personalitySave').disabled = false; }
+  });
   var historyLoading = false;
 
   function renderControls() {
@@ -294,7 +334,7 @@
 
     var role = document.createElement('span');
     role.className = 'line-role';
-    role.textContent = kind === 'user' ? 'YOU' : kind === 'assistant' ? 'JARVIS' : kind === 'error' ? 'ERR' : 'SYS';
+    role.textContent = kind === 'user' ? (profile.userName || 'YOU') : kind === 'assistant' ? profile.assistantName : kind === 'error' ? 'ERR' : 'SYS';
 
     var bodyEl = document.createElement('span');
     bodyEl.className = 'line-body';
@@ -425,9 +465,10 @@
       var data = await res.json();
       if (runId !== generation || (state !== S.IDLE && state !== S.BOOT)) return;
       remoteBusy = data.busy === true;
+      applyProfile(data.profile);
       renderControls();
       if (remoteBusy) return;
-      var signature = JSON.stringify([data.agent, data.messages]);
+      var signature = JSON.stringify([data.agent, data.messages, data.profile]);
       if (signature === historySignature) return;
       historySignature = signature;
       el.transcript.innerHTML = '';
@@ -1201,7 +1242,7 @@
         var res = await fetch(apiUrl('/api/chat'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: cleanText }),
+          body: JSON.stringify({ text: cleanText, profileRevision:profile.revision }),
           signal: ctrl.signal
         });
         if (runId !== generation) return;
@@ -1231,6 +1272,7 @@
             return true;
           }
           if (eventName === 'done') {
+            applyProfile(data.profile);
             sawDone = true;
             if (typeof data.text === 'string' && data.text.length) {
               raw = data.text;

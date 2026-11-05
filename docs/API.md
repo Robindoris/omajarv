@@ -28,6 +28,23 @@ the `X-Jarvis-Token` header. The phone opens the explicit QR access link. Bare h
 `tunnel.state` is `off | starting | up | error`. The hostname is generated per
 cloudflared process, so it changes on every server restart.
 
+## `GET /api/personality` and `POST /api/personality`
+
+Both endpoints require the normal bearer credential. GET returns `assistantName`,
+`personality`, `userName`, `revision`, and `stage` (`pendingSetup`, `assistantName`,
+`personality`, `userName`, or `complete`). POST accepts the three editable strings
+and the current `revision`. Names must contain 1–80 characters and personality
+1–8000 characters. Saving completes personalization and clears remembered agent
+sessions while retaining the shared transcript. A stale revision or active chat
+returns 409; invalid fields return 400. No other configuration fields are editable
+through this endpoint.
+
+`GET /api/history` includes this object as `profile`, along with the shared
+personalization exchange. During personalization, `POST /api/chat` must include
+the current `profileRevision`. Each answer advances one step and returns ordinary
+`token` and `done` SSE events, with the updated `profile` in `done`. These steps
+run locally without invoking an agent. Conversation reset preserves personality.
+
 ## `POST /api/stt`
 
 Raw audio body (`Content-Type: audio/webm`, `audio/ogg`, `audio/wav` or

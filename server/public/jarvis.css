@@ -14,9 +14,11 @@
   --panel: rgba(6, 17, 22, 0.62);
   --mono: ui-monospace, "SFMono-Regular", "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
 
-  --pad-x: max(16px, env(safe-area-inset-left), env(safe-area-inset-right));
-  --pad-t: max(12px, env(safe-area-inset-top));
-  --pad-b: max(12px, env(safe-area-inset-bottom));
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --pad-x: calc(16px + max(env(safe-area-inset-left, 0px), env(safe-area-inset-right, 0px)));
+  --pad-t: calc(32px + var(--safe-top));
+  --pad-b: calc(12px + var(--safe-bottom));
   --accent: var(--core);
 }
 
@@ -34,11 +36,38 @@
 
 * { box-sizing: border-box; }
 
+#personalityDialog {
+  width: min(92vw, 560px);
+  max-height: 85dvh;
+  overflow-y: auto;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--core);
+  border-radius: 12px;
+  padding: 20px;
+}
+#personalityDialog::backdrop { background: rgba(0,0,0,.7); }
+#personalityForm { display: grid; gap: 10px; }
+#personalityForm h2, #personalityForm p { margin: 0 0 8px; }
+#personalityForm p { color: var(--muted); font-size: 13px; }
+#personalityForm input, #personalityForm textarea {
+  width: 100%; min-width: 0; font: inherit; color: var(--text);
+  background: var(--panel); border: 1px solid var(--line-strong); border-radius: 5px; padding: 10px;
+}
+#personalityForm textarea { resize: vertical; min-height: 140px; }
+#personalityForm button { font: inherit; background: var(--panel); border: 1px solid var(--core); border-radius: 5px; padding: 10px 16px; }
+#personalityForm :focus-visible { outline: 2px solid var(--core); outline-offset: 2px; }
+#personalityError { color: var(--red) !important; }
+.personality-actions { display: flex; justify-content: flex-end; gap: 12px; }
+.wordmark { max-width: 40vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 html,
 body {
   margin: 0;
   height: 100%;
   background: var(--bg);
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 body {
@@ -230,6 +259,7 @@ button:focus:not(:focus-visible) { outline: none; }
   align-items: center;
   gap: 9px;
   min-width: 0;
+  flex: 1 1 0;
 }
 
 .brand-mark {
@@ -253,6 +283,7 @@ button:focus:not(:focus-visible) { outline: none; }
   align-items: center;
   gap: 10px;
   min-width: 0;
+  flex-shrink: 0;
 }
 
 .agent {
@@ -998,9 +1029,16 @@ body[data-state="error"] .ptt { border-color: rgba(var(--red-rgb), 0.45); }
 }
 
 /* Conversation-first layout, shared by phone and installed web app. */
-.view-switch { display: flex; gap: 8px; flex-shrink: 0; }
+.view-switch {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, .7fr) minmax(0, 1.15fr);
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  flex-shrink: 0;
+}
 .view-switch button, .latest-btn { min-height: 44px; padding: 8px 16px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--bg); color: var(--text); font: inherit; cursor: pointer; }
-.view-switch button { flex: 1; }
+.view-switch button { min-width: 0; padding: 8px 6px; font-size: clamp(.75rem, 3.4vw, .875rem); }
 .view-switch button[aria-pressed="true"] { color: var(--core); border-color: var(--core); }
 .stage { justify-content: flex-start; }
 .transcript-wrap { display: flex; flex-direction: column; flex: 1; min-height: 0; width: 100%; position: relative; }
