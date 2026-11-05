@@ -38,8 +38,13 @@ independently installed systemd service. Delete retained data separately if desi
 Local process visibility: phone QR and clipboard helpers receive bearer links on
 stdin. Offline status also passes its bearer URL to jq over stdin. Browser opening uses a private temporary HTML handoff, removed after a
 short delay (an interrupted launcher can leave it in the private temp directory).
-Agent requests are supported only through the verified Codex and Claude stdin
-adapters; other adapters fail closed rather than put requests in process arguments.
+Agent requests use stdin with Codex, Claude, OpenCode and Hermes; other adapters
+fail closed rather than put requests in process arguments. OpenCode uses a private
+standalone server. Hermes uses ACP session loading, text updates and explicit
+`session/cancel`, so stopping a request does not merely detach from gateway work.
+OpenCode auto-approval and approving Hermes ACP permission requests require the
+explicit `agentFullAccess` setting. Otherwise Hermes permission requests are
+denied, and OpenCode retains its configured permission rules.
 Speech uses whisper-cli even with an older server configuration. Unauthenticated
 localhost whisper-server listeners are never used; install whisper-cli for voice.
 

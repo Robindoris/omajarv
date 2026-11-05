@@ -10,7 +10,7 @@ try {
     const {runAgent} = await import('./server/lib/agent.mjs');
     const {ensureWhisperServer} = await import('./server/lib/stt.mjs');
     const assert = (await import('node:assert/strict')).default;
-    for (const agent of ['opencode','gemini','grok','cursor-agent','copilot','crush','omp','pi','muse','hermes','openclaw']) {
+    for (const agent of ['gemini','grok','cursor-agent','copilot','crush','omp','pi','muse','openclaw']) {
       assert.throws(() => runAgent({config:{agent,systemPrompt:'private'}, text:'secret request'}), /private stdin transport/);
     }
     assert.equal(await ensureWhisperServer({stt:{engine:'server',serverPort:8178}}), false);

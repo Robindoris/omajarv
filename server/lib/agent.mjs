@@ -8,6 +8,7 @@ import { spawn } from "node:child_process";
 import readline from "node:readline";
 import fs from "node:fs";
 import path from "node:path";
+import { runHermes } from "./hermes.mjs";
 import { paths, readSessions, writeSessions, resolveAgent } from "./config.mjs";
 
 const LABELS = {
@@ -44,7 +45,7 @@ function binPresent(bin) {
 
 export function agentStatus(config) {
   const id = resolveAgent(config);
-  return { id, label: agentLabel(id), ready: ["codex", "claude"].includes(id) && binPresent(id) };
+  return { id, label: agentLabel(id), ready: ["codex", "claude", "opencode", "hermes"].includes(id) && binPresent(id) };
 }
 
 function buildPrompt(text, config) {
@@ -58,6 +59,21 @@ function adapter(id, { prompt, session, config }) {
   const cwd = config.workDir || paths.root;
 
   switch (id) {
+    case "opencode": {
+      // A private server also keeps Stop scoped to this child process tree.
+      const args = ["run", "--standalone", "--format", "json"];
+      if (session) args.push("--session", session);
+      if (config.agentFullAccess === true) args.push("--auto");
+      return {
+        cmd: "opencode", args, cwd, stdin: prompt, requireSuccess: true,
+        parse: (event, emit, setSession) => {
+          if (event.sessionID) setSession(event.sessionID);
+          if (event.type === "error") throw new Error(event.error?.message || event.error?.data?.message || "OpenCode request failed");
+          if (event.type === "text" && typeof event.part?.text === "string") emit(event.part.text);
+        },
+      };
+    }
+
     case "codex": {
       const accessArgs = config.codexFullAccess === true
         ? ["--dangerously-bypass-approvals-and-sandbox"]
@@ -104,7 +120,7 @@ function adapter(id, { prompt, session, config }) {
     }
 
     default:
-      throw new Error(`${agentLabel(id)} is disabled: a private stdin transport has not been verified. Select Codex or Claude.`);
+      throw new Error(`${agentLabel(id)} is disabled: a private stdin transport has not been verified. Select Codex, Claude, OpenCode or Hermes.`);
   }
 }
 
@@ -113,6 +129,7 @@ function adapter(id, { prompt, session, config }) {
 export function runAgent({ config, text, sessionId, signal, onText }) {
   const id = resolveAgent(config);
   const prompt = buildPrompt(text, config);
+  if (id === "hermes") return runHermes({config, prompt, sessionId, signal, onText});
   const spec = adapter(id, { prompt, session: sessionId, config });
 
   return new Promise((resolve, reject) => {
@@ -162,7 +179,7 @@ export function runAgent({ config, text, sessionId, signal, onText }) {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      if (code !== 0 && !text_out) {
+      if (code !== 0 && (!text_out || spec.requireSuccess)) {
         reject(new Error(stderr.trim().slice(-400) || `${agentLabel(id)} exited with code ${code}`));
         return;
       }
@@ -173,6 +190,7 @@ export function runAgent({ config, text, sessionId, signal, onText }) {
       resolve({ text: text_out.trim(), session, agent: id, label: agentLabel(id) });
     }
 
+    child.stdin.on("error", error => fail(error));
     if (spec.stdin !== null) child.stdin.end(spec.stdin);
     else child.stdin.end();
 
@@ -195,8 +213,8 @@ export function runAgent({ config, text, sessionId, signal, onText }) {
         }, (value) => {
           if (value) session = value;
         });
-      } catch {
-        // A malformed event must not take the whole turn down.
+      } catch (error) {
+        fail(error);
       }
     };
 

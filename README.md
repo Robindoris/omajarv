@@ -14,9 +14,18 @@ The coding agent handles the request using its own tools, permissions and provid
 ## Get it running
 
 You need Omarchy Quattro, Node.js **22 or newer**, `curl`, `jq` and `openssl`, plus
-an installed, signed-in coding agent selected in Omarchy. Codex, Claude Code and
-OpenCode have conversation-session adapters; other included CLI adapters may have
-more limited session support.
+an installed, signed-in coding agent selected in Omarchy. Codex, Claude Code,
+OpenCode and Hermes support private stdin prompts and conversation sessions.
+OpenCode must support `run --standalone --format json`; Hermes must support
+`hermes acp` with session loading and cancellation. Upgrade older CLIs if these options
+are unavailable. Other agents remain disabled until their private transport is
+verified. You can override the Omarchy default with `"agent": "opencode"` (or
+`"hermes"`, `"codex"`, `"claude"`) in the JARVIS configuration.
+
+OpenCode retains its configured permission rules. Hermes permission requests are
+denied in normal mode because JARVIS has no interactive approval dialog. Explicit
+`"agentFullAccess": true` enables OpenCode auto-approval and lets JARVIS approve
+Hermes permission requests for that turn. Only enable it for trusted requests.
 
 ```bash
 git clone https://github.com/Robindoris/omajarv.git ~/.local/share/omajarv
@@ -172,6 +181,8 @@ node tests/install.mjs
 node tests/theme.mjs
 node tests/tailscale.mjs
 node tests/integration.mjs
+node tests/agents.mjs        # OpenCode/Hermes transport, sessions and Stop
+node tests/local-privacy.mjs
 node tests/theme-browser.mjs  # requires Chromium
 omarchy plugin validate .
 ```
