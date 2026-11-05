@@ -82,3 +82,15 @@ trust a replacement listener on the bridge's TCP port. Startup, stop and uninsta
 retire the legacy certificate-unverified TCP mapping; uninstall removes JARVIS's
 socket mapping too. Cleanup preserves other applications' Serve routes and fails
 closed when an installed Tailscale service cannot be inspected.
+
+Attachments require the existing authenticated API. Storage uses randomized IDs,
+mode-0700 directories and exclusive mode-0600 files outside the web root; clients
+cannot supply filesystem paths. Filenames are bounded and reject separators and
+control characters, and both UIs render them as plain text. Upload size, count,
+concurrency, lifetime and storage quotas are bounded. Native selection rejects
+symlinks and special files, and clipboard reads occur only on explicit paste.
+Raster image type is detected from bytes for Codex's image input. Other files are
+provided as private local paths for agent tools; the bridge never executes or
+previews them. Attachment instructions mark contents as untrusted, but this is not
+malware scanning or a guarantee against prompt injection: the selected agent's
+permissions remain the boundary for any tool actions it chooses to take.

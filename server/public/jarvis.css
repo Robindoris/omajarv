@@ -1084,3 +1084,12 @@ body[data-view="voice"] .ptt { width: 104px; height: 104px; }
 #sudoCommand { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 140px; overflow-y: auto; border: 1px solid var(--line-strong); padding: 10px; }
 #sudoError { color: var(--red) !important; }
 #sudoDirectory { overflow-wrap: anywhere; }
+
+.attachment-tools { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:8px; }
+.attachment-tools button, #attachmentList button { background:var(--bg); color:var(--text); border:1px solid var(--muted); border-radius:6px; padding:6px 10px; cursor:pointer; }
+.attachment-tools small { color:var(--muted); font-size:11px; }
+#attachmentList { max-height:100px; overflow-y:auto; font-size:12px; }
+.attachment-row { display:flex; align-items:center; gap:8px; margin-top:4px; }
+.attachment-row span { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.composer, .attachment-tools, #attachmentList { width:100%; min-width:0; max-width:100%; }
+.attachment-tools small { flex-basis:100%; overflow-wrap:anywhere; }

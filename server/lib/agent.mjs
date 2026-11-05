@@ -56,7 +56,7 @@ function buildPrompt(text, config) {
 
 // Each supported adapter passes the prompt on stdin and returns a
 // parser that maps one agent JSON event onto zero or more text deltas.
-function adapter(id, { prompt, session, config }) {
+function adapter(id, { prompt, session, config, images = [] }) {
   const cwd = config.workDir || paths.root;
 
   switch (id) {
@@ -84,6 +84,7 @@ function adapter(id, { prompt, session, config }) {
       const base = session
         ? ["exec", "resume", "--json", "--skip-git-repo-check", ...accessArgs, session, "-"]
         : ["exec", "--json", "--skip-git-repo-check", ...accessArgs, "-"];
+      for (const image of images) base.splice(base.length - 1, 0, "--image", image);
       return {
         cmd: "codex",
         args: base,
@@ -129,11 +130,11 @@ function adapter(id, { prompt, session, config }) {
 
 // Run one turn. `onText` receives incremental text; the promise resolves with
 // the full reply plus the adapter's session id (for --resume next turn).
-export function runAgent({ config, text, sessionId, signal, onText, env = {} }) {
+export function runAgent({ config, text, sessionId, signal, onText, env = {}, images = [] }) {
   const id = resolveAgent(config);
   const prompt = buildPrompt(text, config);
   if (id === "hermes") return runHermes({config, prompt, sessionId, signal, onText, env});
-  const spec = adapter(id, { prompt, session: sessionId, config });
+  const spec = adapter(id, { prompt, session: sessionId, config, images });
 
   return new Promise((resolve, reject) => {
     const child = spawn(spec.cmd, spec.args, {

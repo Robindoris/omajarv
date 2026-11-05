@@ -60,6 +60,7 @@ Ui.Panel {
   }
   property bool confirmReset: false
   property bool readAloud: false
+  property var attachments: []
   property var messages: []
   property string streamText: ""
   property bool remoteBusy: false
@@ -190,18 +191,22 @@ Ui.Panel {
   }
   function send() {
     var text = input.text.trim()
-    if (!text || root.working || root.remoteBusy || !root.running) return
+    if ((!text && !root.attachments.length) || root.working || root.remoteBusy || !root.running) return
     root.notice = ""
     root.streamText = ""
     root.lastOutcome = ""
     root.assistantState = "Sending"
-    root.messages = root.messages.concat([{ role: "user", text: text }])
+    root.messages = root.messages.concat([{ role: "user", text: text + (root.attachments.length ? "\n[Attached: " + root.attachments.map(function(f) { return f.name }).join(", ") + "]" : "") }])
     input.text = ""
     root.command({ action: "send", text: text })
     transcript.positionViewAtEnd()
   }
   function handleEvent(data) {
-    if (data.event === "ready") {
+    if (data.event === "attachments") {
+      root.attachments = data.files || []
+    } else if (data.event === "clipboardText") {
+      input.insert(input.cursorPosition, data.text || "")
+    } else if (data.event === "ready") {
       root.command({ action: "readAloud", enabled: root.readAloud })
       root.command({ action: "history" })
       root.command({ action: "models" })
@@ -571,6 +576,23 @@ Ui.Panel {
             }
             Text { textFormat: Text.PlainText; anchors.centerIn: parent; width: parent.width * 0.8; visible: root.messages.length === 0 && !root.streamText && !root.working; text: "What can I help with?\nType below or tap the microphone.\nSuper + Ctrl + J opens JARVIS."; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap; color: OmarchyCommons.Color.muted; font.family: root.fontFamily; font.pixelSize: Style.font.body }
           }
+          ColumnLayout {
+            Layout.fillWidth: true
+            Repeater {
+              model: root.attachments
+              RowLayout {
+                required property var modelData
+                Layout.fillWidth: true
+                Text { Layout.fillWidth: true; text: modelData.name + " (" + Math.ceil(modelData.size / 1024) + " KB)"; textFormat: Text.PlainText; elide: Text.ElideMiddle; color: root.fg; font.family: root.fontFamily }
+                Ui.Button { text: "Remove"; bordered: true; enabled: !root.working; onClicked: root.command({action:"removeAttachment", id:modelData.id}) }
+              }
+            }
+            Text { Layout.fillWidth: true; text: "Files are shared with your selected agent. Up to 4 files, 10 MB each."; textFormat: Text.PlainText; wrapMode: Text.WordWrap; color: OmarchyCommons.Color.muted; font.pixelSize: Style.font.bodySmall }
+            RowLayout {
+              Ui.Button { text: "Attach files"; bordered: true; enabled: root.running && !root.working && !root.remoteBusy && root.attachments.length < 4; onClicked: root.command({action:"attachFiles"}) }
+              Ui.Button { text: "Paste image"; bordered: true; enabled: root.running && !root.working && !root.remoteBusy && root.attachments.length < 4; onClicked: root.command({action:"pasteClipboard", imageOnly:true}) }
+            }
+          }
           RowLayout {
             Layout.fillWidth: true
             Controls.TextArea {
@@ -592,6 +614,12 @@ Ui.Panel {
               selectByMouse: true
               enabled: root.running
               background: Rectangle { color: "transparent"; radius: Style.cornerRadius; border.width: 1; border.color: input.activeFocus ? OmarchyCommons.Color.accent : OmarchyCommons.Color.muted }
+              Keys.onPressed: function(event) {
+                if (event.matches(StandardKey.Paste)) {
+                  event.accepted = true
+                  if (!root.working && !root.remoteBusy) root.command({action:"pasteClipboard"})
+                }
+              }
               Keys.onReturnPressed: function(event) {
                 if (!(event.modifiers & Qt.ShiftModifier)) { root.send(); event.accepted = true }
                 else event.accepted = false
@@ -605,7 +633,7 @@ Ui.Panel {
             Ui.Button {
               focusable: true
               Keys.onEscapePressed: root.close()
-              text: "Send"; bordered: true; enabled: root.running && !root.working && !root.remoteBusy && input.text.trim() !== ""; onClicked: root.send() }
+              text: "Send"; bordered: true; enabled: root.running && !root.working && !root.remoteBusy && (input.text.trim() !== "" || root.attachments.length > 0); onClicked: root.send() }
           }
           RowLayout {
             Layout.fillWidth: true

@@ -19,6 +19,7 @@ let prompt='';
 process.stdin.on('data',chunk=>prompt+=chunk);
 process.stdin.on('end',()=>{
  require('fs').writeFileSync(process.env.HOME + '/agent-prompt', prompt);
+ require('fs').writeFileSync(process.env.HOME + '/agent-args', JSON.stringify(process.argv));
  if(prompt.includes('privacy failure request')) { console.error(prompt);process.exit(1); }
  if(prompt.includes('sudo fixture request') || prompt.includes('sudo finish early request')) {
   const fs=require('fs'),path=require('path');
@@ -47,20 +48,28 @@ const child=spawn(process.execPath,[${JSON.stringify(path.join(root,'server/sudo
 let password='';child.stdout.on('data',data=>password+=data);child.stderr.resume();
 child.on('exit',code=>{const ok=code===0&&password==='integration-sudo-fixture\\n';password='';process.exit(ok?0:1);});
 `);
+fs.writeFileSync(path.join(home,'selected.txt'),'DESKTOP_FILE_FIXTURE');
+fs.writeFileSync(path.join(home,'bin/zenity'),`#!/usr/bin/env node
+console.log(process.env.HOME+'/selected.txt');
+`,{mode:0o755});
+fs.writeFileSync(path.join(home,'bin/wl-paste'),`#!/usr/bin/env node
+if(process.argv.includes('--list-types')) console.log('image/png');
+else process.stdout.write(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=','base64'));
+`,{mode:0o755});
 fs.writeFileSync(path.join(home,'bin/tailscale'),'#!/bin/sh\nprintf \'{}\\n\'\n',{mode:0o755});
 const env={...process.env,HOME:home,PATH:path.join(home,'bin')+':'+process.env.PATH};
 let server=spawn(process.execPath,[path.join(root,'server/jarvis-server.mjs')],{env,stdio:['ignore','pipe','pipe']});
 let logs='';server.stdout.on('data',b=>logs+=b);server.stderr.on('data',b=>logs+=b);
 let helper;
 function api(endpoint,body,auth=true){return new Promise((resolve,reject)=>{
-const req=https.request({hostname:'127.0.0.1',servername:'localhost',port,path:endpoint,method:body===undefined?'GET':'POST',ca:fs.readFileSync(path.join(state,'cert.pem')),headers:auth?{'x-jarvis-token':fs.readFileSync(path.join(state,'token'),'utf8').trim(),'content-type':'application/json'}:{}},res=>{let text='';res.setEncoding('utf8');res.on('data',b=>text+=b);res.on('end',()=>resolve({status:res.statusCode,text,headers:res.headers}));});req.on('error',reject);req.end(body===undefined?undefined:JSON.stringify(body));});}
+const req=https.request({hostname:'127.0.0.1',servername:'localhost',port,path:endpoint,method:body===undefined?'GET':'POST',ca:fs.readFileSync(path.join(state,'cert.pem')),headers:auth?{'x-jarvis-token':fs.readFileSync(path.join(state,'token'),'utf8').trim(),'content-type':'application/json'}:{}},res=>{let text='';res.setEncoding('utf8');res.on('data',b=>text+=b);res.on('end',()=>resolve({status:res.statusCode,text,headers:res.headers}));});req.on('error',reject);req.end(body===undefined?undefined:Buffer.isBuffer(body)?body:JSON.stringify(body));});}
 try {
 for(let i=0;i<100&&!logs.includes('listening on');i++)await new Promise(r=>setTimeout(r,50));
 assert.match(logs,/listening on/);
 for(const endpoint of ['/api/status','/api/theme','/api/health','/api/personality','/api/history','/api/sudo/pending','/api/models']){
  assert.equal((await api(endpoint,undefined,false)).status,401,endpoint);
 }
-for(const endpoint of ['/api/chat','/api/chat/stop','/api/session/reset','/api/personality','/api/stt','/api/tts','/api/sudo/reply','/api/agent/model']){
+for(const endpoint of ['/api/attachments?name=test.txt','/api/attachments/remove','/api/chat','/api/chat/stop','/api/session/reset','/api/personality','/api/stt','/api/tts','/api/sudo/reply','/api/agent/model']){
  assert.equal((await api(endpoint,{},false)).status,401,endpoint);
 }
 const privateHeaders=(await api('/api/history')).headers;
@@ -154,6 +163,47 @@ for(let i=0;i<100&&!output.includes('"event":"done"');i++)await new Promise(r=>s
 assert.match(output,/"event":"done"/,errors+output);
 assert.match(output,/Hello from the test agent/);
 assert.equal(JSON.parse((await api('/api/history')).text).messages.length,4);
+// Authenticated raw upload, opaque references, agent delivery, deletion and reset.
+const upload=await api('/api/attachments?name=fixture.txt',Buffer.from('ATTACHMENT_PRIVATE_FIXTURE'));
+assert.equal(upload.status,200,upload.text);
+const uploaded=JSON.parse(upload.text);
+assert.ok(uploaded.id); assert.equal(uploaded.path,undefined);
+assert.equal((await api('/api/attachments?name=..%2Fevil',Buffer.from('x'))).status,400);
+assert.equal((await api('/api/chat',{text:'inspect',attachments:['/etc/passwd']})).status,400);
+assert.equal((await api('/api/chat',{text:'inspect',attachments:[uploaded.id,uploaded.id]})).status,400);
+const attachmentReply=await api('/api/chat',{attachments:[uploaded.id]});
+assert.match(attachmentReply.text,/event: done/);
+const attachmentPrompt=fs.readFileSync(path.join(home,'agent-prompt'),'utf8');
+assert.match(attachmentPrompt,/fixture.txt/);
+assert.match(attachmentPrompt,/untrusted data/);
+assert.ok(!attachmentPrompt.includes('ATTACHMENT_PRIVATE_FIXTURE'));
+const metadata=JSON.parse(attachmentPrompt.split('JSON metadata):\n')[1].split('\n')[0]);
+assert.equal(fs.readFileSync(metadata[0].path,'utf8'),'ATTACHMENT_PRIVATE_FIXTURE');
+assert.equal((await api('/api/attachments/remove',{id:uploaded.id})).status,409);
+assert.equal((await api('/'+uploaded.id)).status,404);
+const disposable=JSON.parse((await api('/api/attachments?name=remove.txt',Buffer.from('x'))).text);
+assert.equal((await api('/api/attachments/remove',{id:disposable.id})).status,200);
+assert.equal((await api('/api/chat',{attachments:[disposable.id]})).status,400);
+await api('/api/session/reset',{});
+assert.equal(fs.existsSync(metadata[0].path),false);
+assert.equal((await api('/api/chat',{attachments:[uploaded.id]})).status,400);
+async function desktopAction(action) {
+ output=''; helper.stdin.write(JSON.stringify(action)+'\n');
+ for(let i=0;i<100&&!output.includes('"state":"Ready"');i++) await new Promise(r=>setTimeout(r,25));
+ assert.match(output, /"state":"Ready"/,output);
+ assert.ok(!output.includes('"event":"error"'),output);
+ return output.split('\n').filter(Boolean).map(line=>JSON.parse(line));
+}
+let desktopEvents=await desktopAction({action:'attachFiles'});
+assert.equal(desktopEvents.find(e=>e.event==='attachments').files[0].name,'selected.txt');
+desktopEvents=await desktopAction({action:'pasteClipboard',imageOnly:true});
+const desktopFiles=desktopEvents.find(e=>e.event==='attachments').files;
+assert.equal(desktopFiles.length,2);
+assert.equal(desktopFiles[1].type,'image');
+await desktopAction({action:'send',text:'Inspect desktop files and image'});
+assert.match(fs.readFileSync(path.join(home,'agent-prompt'),'utf8'),/selected.txt/);
+assert.match(fs.readFileSync(path.join(home,'agent-args'),'utf8'),/--image/);
+await desktopAction({action:'reset'});
 const auditProfile=JSON.parse((await api('/api/personality')).text);
 const promptMarker='PRIVATE_PERSONALITY_AUDIT_FIXTURE';
 await api('/api/personality',{...auditProfile,personality:promptMarker});
@@ -225,5 +275,5 @@ assert.ok(payload.matrix.every(row=>row.length===payload.size));
 fs.writeFileSync(path.join(home,'qr.png'),Buffer.from(payload.image.split(',')[1],'base64'));
 const decoded=spawnSync('zbarimg',['--quiet','--raw',path.join(home,'qr.png')],{encoding:'utf8'});
 assert.equal(decoded.stdout.trim(),payload.url);
-console.log('PASS: authenticated personality/onboarding, encrypted sudo API with no password in model/history/logs, streaming, pinned TLS, reset, Stop and QR decode.');
+console.log('PASS: authenticated attachments, desktop file picker/clipboard/image delivery, personality/onboarding, encrypted sudo API with no password in model/history/logs, streaming, pinned TLS, reset, Stop and QR decode.');
 } catch(error){console.error(logs);throw error;} finally {helper?.kill('SIGTERM');const stopped=server.exitCode===null?once(server,'exit'):Promise.resolve();server.kill('SIGTERM');await stopped;fs.rmSync(home,{recursive:true,force:true});}

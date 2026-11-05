@@ -360,6 +360,61 @@
     } catch (error) { $('#personalityError').textContent = error.message; }
     finally { $('#personalitySave').disabled = false; }
   });
+  var pendingAttachments = [];
+  var attachmentUploading = false;
+  function showAttachments() {
+    var list = $('#attachmentList');
+    list.textContent = '';
+    pendingAttachments.forEach(function (file) {
+      var row = document.createElement('div'); row.className = 'attachment-row';
+      var label = document.createElement('span'); label.textContent = file.name + ' (' + Math.ceil(file.size / 1024) + ' KB)';
+      var remove = document.createElement('button'); remove.type = 'button'; remove.textContent = 'Remove';
+      remove.disabled = attachmentUploading || state !== S.IDLE;
+      remove.addEventListener('click', async function () {
+        remove.disabled = true;
+        try {
+          var res = await apiFetch('/api/attachments/remove', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({id:file.id})});
+          if (!res.ok) throw new Error(parseErrorText(await res.text(),res.status));
+          pendingAttachments = pendingAttachments.filter(function (f) { return f.id !== file.id; });
+        } catch (e) { flashStatus(e.message || 'REMOVE FAILED', 3000); }
+        showAttachments();
+      });
+      row.appendChild(label); row.appendChild(remove); list.appendChild(row);
+    });
+  }
+  async function uploadFiles(files) {
+    if (attachmentUploading || state !== S.IDLE || remoteBusy || online === false) return;
+    files = Array.from(files);
+    if (files.length + pendingAttachments.length > 4) { flashStatus('ATTACH AT MOST FOUR FILES',3000); return; }
+    if (files.some(function (file) { return !file.size || file.size > 10*1024*1024; })) { flashStatus('FILES MUST BE 1 BYTE TO 10 MB',3000); return; }
+    attachmentUploading = true; renderControls(); showAttachments();
+    try {
+      for (var file of files) {
+        var res = await apiFetch('/api/attachments?name=' + encodeURIComponent(file.name || 'clipboard.png'), {method:'POST', headers:{'Content-Type':'application/octet-stream'}, body:file});
+        if (!res.ok) throw new Error(parseErrorText(await res.text(),res.status));
+        pendingAttachments.push(await res.json()); showAttachments();
+      }
+    } catch (e) { flashStatus(e.message || 'UPLOAD FAILED',4000); }
+    finally { attachmentUploading = false; showAttachments(); renderControls(); }
+  }
+  $('#attachBtn').addEventListener('click', function () { $('#fileInput').click(); });
+  $('#fileInput').addEventListener('change', function () { uploadFiles(this.files); this.value = ''; });
+  $('#pasteImageBtn').addEventListener('click', async function () {
+    try {
+      var items = await navigator.clipboard.read();
+      var files = [];
+      for (var item of items) {
+        var type = item.types.find(function (t) { return ['image/png','image/jpeg','image/webp'].includes(t); });
+        if (type) files.push(new File([await item.getType(type)], 'clipboard.' + type.split('/')[1], {type:type}));
+      }
+      if (!files.length) throw new Error('Copy a PNG, JPEG or WebP image first.');
+      await uploadFiles(files);
+    } catch (e) { flashStatus('Clipboard unavailable. Paste into the message or use Attach files.',4000); }
+  });
+  el.textInput.addEventListener('paste', function (event) {
+    var files = Array.from((event.clipboardData && event.clipboardData.files) || []).filter(function (f) { return f.type.startsWith('image/'); });
+    if (files.length) { event.preventDefault(); uploadFiles(files); }
+  });
   var historyLoading = false;
 
   function renderControls() {
@@ -369,10 +424,12 @@
       el.stopBtn.disabled = state === S.BOOT || (!busy && !isPlaying && !remoteBusy);
       el.stopBtn.classList.toggle('is-active', state === S.SPEAKING || state === S.THINKING);
     }
-    if (el.ptt) el.ptt.disabled = state === S.BOOT || remoteBusy || !voiceInputReady;
+    if (el.ptt) el.ptt.disabled = attachmentUploading || state === S.BOOT || remoteBusy || !voiceInputReady;
+    if ($('#attachBtn')) $('#attachBtn').disabled = attachmentUploading || state !== S.IDLE || remoteBusy || online === false || pendingAttachments.length >= 4;
+    if ($('#pasteImageBtn')) $('#pasteImageBtn').disabled = $('#attachBtn').disabled;
     if (el.typeToggle) el.typeToggle.disabled = state === S.BOOT;
-    if (el.sendBtn) el.sendBtn.disabled = state !== S.IDLE || remoteBusy || online === false;
-    if (el.resetBtn) el.resetBtn.disabled = state === S.BOOT || remoteBusy;
+    if (el.sendBtn) el.sendBtn.disabled = attachmentUploading || state !== S.IDLE || remoteBusy || online === false;
+    if (el.resetBtn) el.resetBtn.disabled = attachmentUploading || state === S.BOOT || remoteBusy;
   }
 
   function setState(next) {
@@ -1325,7 +1382,8 @@
 
   function startChat(text) {
     var cleanText = String(text || '').trim();
-    if (!cleanText) return;
+    if (attachmentUploading || (!cleanText && !pendingAttachments.length)) return;
+    var attached = pendingAttachments.slice();
     if (remoteBusy) { flashStatus('AGENT BUSY ON ANOTHER DEVICE', 1800); return; }
 
     if (recording || starting) abortRecording();
@@ -1333,7 +1391,7 @@
     var runId = generation;
     ttsErrorNoted = false;
 
-    addLine('user', cleanText);
+    addLine('user', cleanText + (attached.length ? '\n[Attached: ' + attached.map(function (f) { return f.name; }).join(', ') + ']' : ''));
     var assistant = addLine('assistant', '', { streaming: true });
     streamDone = false;
     setState(S.THINKING);
@@ -1354,7 +1412,7 @@
         var res = await apiFetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: cleanText, profileRevision:profile.revision }),
+          body: JSON.stringify({ text: cleanText, profileRevision:profile.revision, attachments:attached.map(function (f) { return f.id; }) }),
           signal: ctrl.signal
         });
         if (runId !== generation) return;
@@ -1371,6 +1429,8 @@
           if (!data || typeof data !== 'object') data = {};
 
           if (eventName === 'meta') {
+            pendingAttachments = pendingAttachments.filter(function (f) { return !attached.some(function (a) { return a.id === f.id; }); });
+            showAttachments();
             if (data.agent) setAgent(data.agent);
             if (data.session) setSession(String(data.session).slice(-4).toUpperCase());
             return true;
@@ -1838,6 +1898,7 @@
       }
       if (runId !== generation) return;
       el.transcript.innerHTML = '';
+      pendingAttachments = []; showAttachments();
       addSystem('SESSION CLEARED');
       setSession('--');
       setState(S.IDLE);
@@ -1887,7 +1948,7 @@
       event.preventDefault();
       if (!el.textInput) return;
       var text = el.textInput.value.trim();
-      if (!text) { el.textInput.focus(); return; }
+      if (attachmentUploading || (!text && !pendingAttachments.length)) { el.textInput.focus(); return; }
       if (online === false || remoteBusy || state !== S.IDLE) return;
       openComposer(false);
       ensureAudio();

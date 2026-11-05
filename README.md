@@ -247,3 +247,15 @@ See the [publication review](docs/RELEASE-REVIEW.md) for the tested boundaries.
 
 [MIT](LICENSE) for omajarv source. Speech runtimes, coding agents and downloaded
 models retain their own terms; this repository does not redistribute model weights.
+
+### Files and clipboard images
+
+Use **Attach files** in desktop or phone chat, or paste an image into the message.
+Desktop also offers **Paste image** and Ctrl+V; phone clipboard-button availability
+depends on browser permissions, with the file picker as a fallback. Desktop needs
+`zenity` for the file picker and `wl-clipboard` for clipboard access.
+You can send up to four files (10 MiB each), with or without accompanying text, and
+remove pending files before sending. Files are shared with your selected agent;
+Codex receives raster images through its image input, while other supported agents
+use their file-reading tools. File format support depends on the selected agent.
+Attachments expire after 24 hours and are cleared by New conversation or restart.

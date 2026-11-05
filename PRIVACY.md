@@ -57,3 +57,12 @@ your user permissions. Review the source and the configured agent before use.
 The service worker caches only theme CSS for offline colors. It does not cache API
 responses or conversation pages. Offline speech and responses require a running
 computer; optional phone networking services must also remain connected.
+
+File attachments are uploaded only after choosing files or explicitly pasting an
+image. They are shared with the selected coding agent, whose provider may process
+their contents. Pending uploads are private to the local bridge, not web-accessible.
+They expire after 24 hours, are deleted on New conversation and normal bridge
+shutdown, and abandoned upload directories are removed after 24 hours on next start.
+The transcript retains filenames; agent providers may have separate retention.
+Each file is limited to 10 MiB, each message to four files, and local upload storage
+to 100 MiB and 100 files. No thumbnails or active document content are rendered.

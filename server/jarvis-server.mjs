@@ -25,6 +25,7 @@ import { agentStatus, forgetSessions, rememberedSession, rememberSession, runAge
 import { listModels, modelAvailable, modelSelectable } from "./lib/agent-models.mjs";
 
 import { historyFor, appendHistory, clearHistory } from "./lib/history.mjs";
+import { createAttachments, attachmentPrompt, MAX_FILE } from "./lib/attachments.mjs";
 import { createPersonality } from "./lib/personality.mjs";
 import { createSudoSession } from "./lib/sudo.mjs";
 import { publicAgentError } from "./lib/privacy.mjs";
@@ -44,6 +45,8 @@ const useHttp = flag("--http") || process.env.JARVIS_HTTP === "1";
 ensureDirs();
 const config = loadConfig();
 const personality = createPersonality(config);
+const attachments = createAttachments(paths.tmp);
+process.on("exit", () => attachments.close());
 if (option("--port")) config.port = Number(option("--port"));
 const token = readToken();
 
@@ -192,6 +195,7 @@ async function statusPayload() {
   };
 }
 
+let uploadCount = 0;
 let turnCount = 0;
 let chatBusy = false;
 let activeAbort = null;
@@ -201,6 +205,25 @@ let sudoSession = null;
 
 async function handleApi(req, res, pathname, params) {
   if (!authorized(req, params)) return sendJson(res, 401, { ok: false, error: "Bad or missing token" });
+
+  if (pathname === "/api/attachments" && req.method === "POST") {
+    if (uploadCount >= 2) return sendJson(res, 429, {error:"Too many uploads. Try again shortly."});
+    uploadCount++;
+    req.setTimeout(30000, () => req.destroy());
+    try {
+      const name = params.get("name");
+      const bytes = await readBody(req, MAX_FILE);
+      return sendJson(res, 200, attachments.add(name, bytes));
+    } catch (error) { return sendJson(res, error.status || error.statusCode || 400, {error:error.status ? error.message : "Attachment upload failed (maximum 10 MB)."}); }
+    finally { uploadCount--; req.setTimeout(0); }
+  }
+  if (pathname === "/api/attachments/remove" && req.method === "POST") {
+    try {
+      const {id} = JSON.parse((await readBody(req, 512)).toString());
+      attachments.remove(id);
+      return sendJson(res, 200, {ok:true});
+    } catch (error) { return sendJson(res, error.status || 400, {error:error.status ? error.message : "Invalid attachment removal."}); }
+  }
 
   if (pathname === "/api/health") return sendJson(res, 200, { ok: true });
   if (pathname === "/api/sudo/pending" && req.method === "GET") {
@@ -272,6 +295,7 @@ async function handleApi(req, res, pathname, params) {
     forgetSessions();
     clearHistory();
     personality.resetTranscript();
+    attachments.clear();
     turnCount = 0;
     return sendJson(res, 200, { ok: true });
   }
@@ -313,9 +337,13 @@ async function handleApi(req, res, pathname, params) {
       return sendJson(res, 400, { ok: false, error: "Invalid JSON" });
     }
     const text = String(payload.text || "").trim().slice(0, config.maxTextChars);
-    if (!text) return sendJson(res, 400, { ok: false, error: "Empty message" });
+    let files;
+    try { files = attachments.resolve(payload.attachments); }
+    catch (error) { return sendJson(res, error.status || 400, {error:error.message}); }
+    if (!text && !files.length) return sendJson(res, 400, { ok: false, error: "Empty message" });
     if (chatBusy) return sendJson(res, 409, { ok: false, error: "JARVIS is still answering the previous request." });
     if (personality.answering()) {
+      if (files.length) return sendJson(res, 409, {error:"Finish personality setup before sending files."});
       let reply;
       try { reply = personality.answer(text, payload.profileRevision); }
       catch (error) { return sendJson(res, error.status || 400, {error:error.message}); }
@@ -325,6 +353,7 @@ async function handleApi(req, res, pathname, params) {
       return res.end(`event: done\ndata: ${JSON.stringify({text:reply, profile:personality.summary()})}\n\n`);
     }
     if (payload.reset) { forgetSessions(); clearHistory(); turnCount = 0; }
+    for (const file of files) { file.active = true; file.used = true; }
     chatBusy = true;
 
     const agent = agentStatus(config);
@@ -343,7 +372,7 @@ async function handleApi(req, res, pathname, params) {
 
     const abort = new AbortController();
     activeAbort = abort;
-    appendHistory(agent.id, "user", text);
+    appendHistory(agent.id, "user", text + (files.length ? "\n[Attached: " + files.map(f => f.name).join(", ") + "]" : ""));
     const heartbeat = setInterval(() => !res.writableEnded && res.write(": ping\n\n"), 15000);
     // res 'close' means the phone navigated away or cancelled; a req 'close'
     // fires as soon as the body is read, which would abort every turn.
@@ -362,7 +391,8 @@ async function handleApi(req, res, pathname, params) {
       const result = await runAgent({
         config: {...config, systemPrompt:personality.prompt() + (sudoSession ? '\n\n' + sudoSession.instruction : '')},
         env: sudoSession?.env,
-        text,
+        text: (text || "Please inspect the attached files.") + attachmentPrompt(files),
+        images: files.filter(f => f.type === "image").map(f => f.path),
         sessionId: rememberedSession(agent.id),
         signal: abort.signal,
         onText: (chunk) => {
@@ -382,6 +412,7 @@ async function handleApi(req, res, pathname, params) {
       appendHistory(agent.id, "system", message);
       send("error", { error: message });
     } finally {
+      for (const file of files) file.active = false;
       sudoSession?.close();
       sudoSession = null;
       clearInterval(heartbeat);

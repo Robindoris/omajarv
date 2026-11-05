@@ -140,3 +140,13 @@ Without a valid token the server returns a 401 landing page on every network pat
 ## `GET /api/health`
 
 Cheap liveness probe used by the Omarchy bar plugin: `{ "ok": true }`.
+
+### Attachments
+
+Authenticated `POST /api/attachments?name=<encoded filename>` accepts raw bytes
+(up to 10 MiB), returning `{id,name,size,type}` without a local path. At most two
+uploads are buffered concurrently. `POST /api/attachments/remove` accepts `{id}`
+for an unsent upload. `POST /api/chat` accepts optional `attachments: [id, ...]`
+(up to four distinct IDs); text may be empty when files are attached. Unknown or
+expired IDs are rejected. Files are never served through an HTTP download route.
+New conversation clears files; temporary uploads also expire or clear on restart.

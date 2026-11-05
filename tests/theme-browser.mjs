@@ -156,7 +156,8 @@ const expired=new Promise((resolve,reject)=>{
 await call('Emulation.setVirtualTimePolicy',{policy:'pauseIfNetworkFetchesPending',budget:16000});
 await expired;
 const dimensions=await call('Runtime.evaluate',{expression:'JSON.stringify({width:innerWidth,height:innerHeight})',returnByValue:true});
-assert.deepEqual(JSON.parse(dimensions.result.value),{width:viewport.width,height:viewport.height});
+const overflow = await call('Runtime.evaluate',{expression:`JSON.stringify(Array.from(document.querySelectorAll('body *')).filter(e=>e.getBoundingClientRect().right>${viewport.width}).map(e=>[e.tagName,e.className,e.getBoundingClientRect().width,e.getBoundingClientRect().right]))`,returnByValue:true});
+assert.deepEqual(JSON.parse(dimensions.result.value),{width:viewport.width,height:viewport.height},overflow.result.value);
 const page=await call('Runtime.evaluate',{expression:'document.documentElement.outerHTML',returnByValue:true});
 const dom=page.result.value;
 const screenshot=await call('Page.captureScreenshot');

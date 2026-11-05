@@ -5,7 +5,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import https from 'node:https';
 import readline from 'node:readline';
-import { spawn } from 'node:child_process';
+import { promisify } from 'node:util';
+import { MAX_FILE, MAX_FILES } from './lib/attachments.mjs';
+import { spawn, execFile } from 'node:child_process';
 import { once } from 'node:events';
 import { loadConfig, paths, readToken } from './lib/config.mjs';
 const config = loadConfig();
@@ -15,6 +17,50 @@ let operation = false, recording = null, playback = null, recordTimer = null, ge
 let readAloud = false;
 let modelLookup = null;
 let profileRevision;
+let pendingAttachments = [];
+const exec = promisify(execFile);
+function emitAttachments() { emit('attachments', {files:pendingAttachments}); }
+async function uploadAttachment(name, bytes) {
+  if (pendingAttachments.length >= MAX_FILES) throw new Error('Attach at most four files.');
+  if (!bytes.length || bytes.length > MAX_FILE) throw new Error('Files must be between 1 byte and 10 MB.');
+  const file = JSON.parse(await request('attachments?name=' + encodeURIComponent(name), bytes, 'application/octet-stream'));
+  pendingAttachments.push(file); emitAttachments();
+}
+async function chooseAttachments() {
+  let result;
+  try { result = await exec('zenity', ['--file-selection', '--multiple', '--separator=\n', '--title=Attach files to JARVIS'], {timeout:120000, maxBuffer:16384}); }
+  catch (error) { if (error.code === 1) return; throw new Error('File picker unavailable. Install zenity or try again.'); }
+  const files = result.stdout.trimEnd().split('\n').filter(Boolean);
+  if (files.length + pendingAttachments.length > MAX_FILES) throw new Error('Attach at most four files.');
+  for (const file of files) {
+    let fd;
+    try {
+      fd = fs.openSync(file, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
+      const stat = fs.fstatSync(fd);
+      if (!stat.isFile() || !stat.size || stat.size > MAX_FILE) throw new Error('Invalid size or file type.');
+      // Read a bounded snapshot even if a file grows while being selected.
+      const bytes = Buffer.alloc(MAX_FILE + 1);
+      let size = 0, count;
+      while (size < bytes.length && (count = fs.readSync(fd, bytes, size, bytes.length - size, null))) size += count;
+      await uploadAttachment(path.basename(file), bytes.subarray(0,size));
+    } catch { throw new Error('Could not attach file. Choose a regular file of at most 10 MB (no symbolic links).'); }
+    finally { if (fd !== undefined) fs.closeSync(fd); }
+  }
+}
+async function pasteClipboard(imageOnly = false) {
+  try {
+    const listing = await exec('wl-paste', ['--list-types'], {timeout:5000, maxBuffer:16384});
+    const types = listing.stdout.split('\n');
+    const type = ['image/png', 'image/jpeg', 'image/webp'].find(t => types.includes(t));
+    if (type) {
+      const result = await exec('wl-paste', ['--no-newline', '--type', type], {encoding:'buffer', timeout:10000, maxBuffer:MAX_FILE});
+      return uploadAttachment('clipboard.' + ({'image/png':'png','image/jpeg':'jpg','image/webp':'webp'})[type], result.stdout);
+    }
+    if (imageOnly) throw new Error('No supported image in clipboard.');
+    const result = await exec('wl-paste', ['--no-newline', '--type', 'text'], {timeout:5000, maxBuffer:64*1024});
+    emit('clipboardText', {text:result.stdout.slice(0,config.maxTextChars)});
+  } catch { throw new Error('Cannot paste clipboard. Copy PNG, JPEG or WebP up to 10 MB, or paste text.'); }
+}
 const requests = new Set();
 const temp = fs.mkdtempSync(path.join(paths.tmp, 'desktop-'));
 function request(endpoint, body, contentType = 'application/json', onEvent) {
@@ -76,10 +122,12 @@ async function speak(text, run) {
   if (code && run === generation) throw new Error('Audio playback failed');
 }
 async function chat(text, run) {
-  text = String(text || '').trim(); if (!text) return;
+  text = String(text || '').trim(); if (!text && !pendingAttachments.length) return;
+  const ids = pendingAttachments.map(f => f.id);
   emit('state', { state: 'Thinking' });
   let reply = '', failure = '';
-  await request('chat', JSON.stringify({ text, profileRevision }), 'application/json', (event, data) => {
+  await request('chat', JSON.stringify({ text, profileRevision, attachments:ids }), 'application/json', (event, data) => {
+    if (event === 'meta') { pendingAttachments = pendingAttachments.filter(f => !ids.includes(f.id)); emitAttachments(); }
     emit(event, data);
     if (event === 'token') reply += data.text || '';
     if (event === 'done') reply = data.text || reply;
@@ -111,6 +159,13 @@ async function finishRecording() {
   finally { if (run === generation) { operation = false; emit('state', { state: 'Ready' }); } }
 }
 async function dispatch(data) {
+  if (data.action === 'attachFiles') return perform(async () => { emit('state', {state:'Choosing files'}); await chooseAttachments(); });
+  if (data.action === 'pasteClipboard') return perform(async () => { await pasteClipboard(data.imageOnly === true); });
+  if (data.action === 'removeAttachment') return perform(async () => {
+    if (!pendingAttachments.some(f => f.id === data.id)) return;
+    await request('attachments/remove', JSON.stringify({id:data.id}));
+    pendingAttachments = pendingAttachments.filter(f => f.id !== data.id); emitAttachments();
+  });
   if (data.action === 'personality') return emit('personality', {profile:JSON.parse(await request('personality'))});
   if (data.action === 'savePersonality') {
     if (operation || recording) throw new Error('Stop the current request before changing personality.');
@@ -142,7 +197,7 @@ async function dispatch(data) {
     await request('chat/stop', '{}');
     emit('state', { state: 'Ready' }); return;
   }
-  if (data.action === 'reset') return perform(async () => { await request('session/reset', '{}'); await snapshot(); });
+  if (data.action === 'reset') return perform(async () => { await request('session/reset', '{}'); pendingAttachments = []; emitAttachments(); await snapshot(); });
   if (data.action === 'send') return perform(run => chat(data.text, run));
   if (data.action === 'record') {
     if (recording) return finishRecording();

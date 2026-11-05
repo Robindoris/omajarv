@@ -12,7 +12,7 @@
   <meta name="robots" content="noindex, nofollow">
   <title>J.A.R.V.I.S.</title>
   <link rel="apple-touch-icon" href="/icon-192.png">
-  <link rel="stylesheet" href="jarvis.css?v=privacy-audit-1">
+  <link rel="stylesheet" href="jarvis.css?v=attachments-1">
   <link rel="stylesheet" href="/theme.css">
 </head>
 <body data-state="boot" data-view="chat">
@@ -138,6 +138,13 @@
         <span class="ptt-hint" id="pttHint">Tap to record · hold to talk</span>
       </div>
 
+      <div class="attachment-tools">
+        <button id="attachBtn" type="button">Attach files</button>
+        <button id="pasteImageBtn" type="button">Paste image</button>
+        <input id="fileInput" type="file" multiple hidden>
+        <small>Shared with your selected agent · 4 files · 10 MB each</small>
+      </div>
+      <div id="attachmentList" aria-live="polite"></div>
       <form class="composer" id="composer" autocomplete="off">
         <label class="sr-only" for="textInput">Type a message for JARVIS</label>
         <input id="textInput" type="text" inputmode="text" enterkeyhint="send" placeholder="Message JARVIS…" maxlength="4000" autocomplete="off" spellcheck="false">
@@ -156,6 +163,6 @@
   </div>
 
   <noscript><div class="noscript">J.A.R.V.I.S. requires JavaScript.</div></noscript>
-  <script src="jarvis.js?v=privacy-audit-1"></script>
+  <script src="jarvis.js?v=attachments-1"></script>
 </body>
 </html>
