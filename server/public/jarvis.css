@@ -1085,11 +1085,16 @@ body[data-view="voice"] .ptt { width: 104px; height: 104px; }
 #sudoError { color: var(--red) !important; }
 #sudoDirectory { overflow-wrap: anywhere; }
 
-.attachment-tools { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:8px; }
-.attachment-tools button, #attachmentList button { background:var(--bg); color:var(--text); border:1px solid var(--muted); border-radius:6px; padding:6px 10px; cursor:pointer; }
-.attachment-tools small { color:var(--muted); font-size:11px; }
+#attachmentList button { background:var(--bg); color:var(--text); border:1px solid var(--muted); border-radius:6px; padding:6px 10px; cursor:pointer; }
+/* Compact attachment actions directly below the conversation. */
+.attachment-tools { display:flex; align-items:center; align-self:flex-start; flex-shrink:0; gap:6px; }
+.attachment-tools button { position:relative; display:grid; place-items:center; width:40px; height:40px; padding:9px; border:1px solid var(--line-strong); border-radius:10px; background:var(--bg); color:var(--muted); cursor:pointer; transition:color .15s, border-color .15s, background .15s; }
+.attachment-tools button svg { width:20px; height:20px; }
+.attachment-tools button:hover, .attachment-tools button:focus-visible { color:var(--core); border-color:var(--core); background:color-mix(in srgb, var(--core) 8%, var(--bg)); }
+.attachment-tools button:focus-visible { outline:2px solid var(--core); outline-offset:3px; }
+.attachment-tools button::after { content:attr(data-tooltip); position:absolute; left:0; bottom:calc(100% + 8px); z-index:10; padding:7px 10px; border:1px solid var(--line-strong); border-radius:7px; background:var(--bg); color:var(--text); font:12px/1.4 sans-serif; white-space:nowrap; pointer-events:none; opacity:0; visibility:hidden; }
+.attachment-tools button:hover::after, .attachment-tools button:focus-visible::after { opacity:1; visibility:visible; }
 #attachmentList { max-height:100px; overflow-y:auto; font-size:12px; }
 .attachment-row { display:flex; align-items:center; gap:8px; margin-top:4px; }
 .attachment-row span { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .composer, .attachment-tools, #attachmentList { width:100%; min-width:0; max-width:100%; }
-.attachment-tools small { flex-basis:100%; overflow-wrap:anywhere; }

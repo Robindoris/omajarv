@@ -12,7 +12,7 @@
   <meta name="robots" content="noindex, nofollow">
   <title>J.A.R.V.I.S.</title>
   <link rel="apple-touch-icon" href="/icon-192.png">
-  <link rel="stylesheet" href="jarvis.css?v=attachments-1">
+  <link rel="stylesheet" href="jarvis.css?v=attachment-icons-2">
   <link rel="stylesheet" href="/theme.css">
 </head>
 <body data-state="boot" data-view="chat">
@@ -98,6 +98,16 @@
         <button class="latest-btn" id="latestBtn" type="button" hidden>Jump to latest ↓</button>
         <div class="transcript" id="transcript" role="log" aria-live="polite" aria-relevant="additions text" aria-atomic="false"></div>
       </section>
+      <div class="attachment-tools" role="group" aria-label="Attachments">
+        <button id="attachBtn" type="button" aria-label="Attach files" aria-describedby="attachmentHint" data-tooltip="Attach files">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m8 12 6.5-6.5a3.5 3.5 0 0 1 5 5L10 20a5 5 0 0 1-7-7l9-9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="m6.5 14 8-8a1.5 1.5 0 0 1 2 2l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+        </button>
+        <button id="pasteImageBtn" type="button" aria-label="Paste image" aria-describedby="attachmentHint" data-tooltip="Paste image">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="4" y="5" width="16" height="16" rx="2.5" stroke="currentColor" stroke-width="1.6"/><path d="M9 5V3h6v2M4 17l5-5 4 4 3-3 4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="15.5" cy="9.5" r="1.5" fill="currentColor"/></svg>
+        </button>
+        <input id="fileInput" type="file" multiple hidden>
+        <span class="sr-only" id="attachmentHint">Shared with your selected agent · 4 files · 10 MB each</span>
+      </div>
     </main>
 
     <footer class="controls">
@@ -138,12 +148,6 @@
         <span class="ptt-hint" id="pttHint">Tap to record · hold to talk</span>
       </div>
 
-      <div class="attachment-tools">
-        <button id="attachBtn" type="button">Attach files</button>
-        <button id="pasteImageBtn" type="button">Paste image</button>
-        <input id="fileInput" type="file" multiple hidden>
-        <small>Shared with your selected agent · 4 files · 10 MB each</small>
-      </div>
       <div id="attachmentList" aria-live="polite"></div>
       <form class="composer" id="composer" autocomplete="off">
         <label class="sr-only" for="textInput">Type a message for JARVIS</label>
