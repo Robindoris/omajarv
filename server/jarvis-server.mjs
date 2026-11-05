@@ -16,7 +16,8 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { ensureDirs, loadConfig, paths, readToken, VERSION } from "./lib/config.mjs";
 import { hostname, lanAddresses, publicUrl, urlFor } from "./lib/net.mjs";
-import { tailscaleStatus } from "./lib/tailscale.mjs";
+import { tailscaleStatus, disableTailscale } from "./lib/tailscale.mjs";
+import { listenServeSocket } from "./lib/serve-socket.mjs";
 import { startTunnel, stopTunnel, tunnelStatus } from "./lib/tunnel.mjs";
 import { transcribe, sttStatus, stopWhisperServer, ensureWhisperServer } from "./lib/stt.mjs";
 import { synthesize, ttsStatus } from "./lib/tts.mjs";
@@ -372,6 +373,12 @@ if (!useHttp) {
   server = http.createServer(handler);
 }
 
+// Retire vulnerable persisted TCP mappings before exposing the bridge again.
+// The replacement proxy cannot be impersonated by binding the public TCP port.
+await disableTailscale(config, { legacyOnly: true });
+const serveServer = await listenServeSocket(handler);
+serveServer.on("error", error => { log("Serve socket error:", error.message); server.close(); });
+
 server.listen(config.port, config.host, () => {
   log(`JARVIS ${VERSION} listening on ${useHttp ? "http" : "https"}://${config.host}:${config.port}`);
   log("phone access: open the JARVIS Phone tab or run jarvis qr (access links are not logged)");
@@ -391,6 +398,7 @@ server.listen(config.port, config.host, () => {
 
 server.on("error", (error) => {
   log("server error:", error.message);
+  serveServer.close();
   process.exitCode = 1;
 });
 
@@ -398,6 +406,7 @@ const shutdown = (signal) => {
   log("shutting down:", signal);
   stopWhisperServer();
   stopTunnel();
+  serveServer.close();
   server.close(() => process.exit(0));
   setTimeout(() => process.exit(0), 3000).unref();
 };

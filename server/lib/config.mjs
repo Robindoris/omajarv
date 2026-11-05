@@ -25,6 +25,7 @@ export const paths = {
   tokenFile: path.join(HOME, ".local", "state", "omarchy-jarvis", "token"),
   certFile: path.join(HOME, ".local", "state", "omarchy-jarvis", "cert.pem"),
   keyFile: path.join(HOME, ".local", "state", "omarchy-jarvis", "key.pem"),
+  serveSocket: path.join(HOME, ".local", "state", "omarchy-jarvis", "serve.sock"),
   sessionsFile: path.join(HOME, ".local", "state", "omarchy-jarvis", "sessions.json"),
   logFile: path.join(HOME, ".local", "state", "omarchy-jarvis", "server.log"),
   omarchyAgentFile: path.join(HOME, ".config", "omarchy", "defaults", "agent"),

@@ -22,6 +22,7 @@ process.stdin.on('end',()=>{
  console.log(JSON.stringify({type:'item.completed',item:{id:'reply',type:'agent_message',text:'Hello from the test agent.'}}));
 });
 `,{mode:0o755});
+fs.writeFileSync(path.join(home,'bin/tailscale'),'#!/bin/sh\nprintf \'{}\\n\'\n',{mode:0o755});
 const env={...process.env,HOME:home,PATH:path.join(home,'bin')+':'+process.env.PATH};
 let server=spawn(process.execPath,[path.join(root,'server/jarvis-server.mjs')],{env,stdio:['ignore','pipe','pipe']});
 let logs='';server.stdout.on('data',b=>logs+=b);server.stderr.on('data',b=>logs+=b);

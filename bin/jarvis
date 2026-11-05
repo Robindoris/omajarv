@@ -117,6 +117,8 @@ cmd_start() {
 }
 
 cmd_stop() {
+  # Retire old TCP proxies before freeing the port. Fail closed on cleanup errors.
+  node "$ROOT/server/lib/tailscale.mjs" retire-legacy
   if using_systemd; then
     systemctl --user stop "$UNIT" 2>/dev/null || true
   elif [[ -f $PIDFILE ]]; then
@@ -138,8 +140,8 @@ cmd_status() {
     if [[ -n $payload ]] && jq -e . >/dev/null 2>&1 <<<"$payload"; then
       jq -c --argjson running "$healthy" '. + {running: $running}' <<<"$payload"
     else
-      jq -cn --arg url "$(url)" --argjson running "$healthy" \
-        '{ok:false, running:$running, url:$url, error:"bridge not reachable"}'
+      url | jq -Rsc --argjson running "$healthy" \
+        '{ok:false, running:$running, url:rtrimstr("\n"), error:"bridge not reachable"}'
     fi
     return
   fi

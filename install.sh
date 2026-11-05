@@ -61,6 +61,8 @@ need_sudo() {
 
 if $uninstall; then
   say "Removing JARVIS"
+  # Do not leave an old TCP proxy able to send credentials to a replacement server.
+  node "$ROOT/server/lib/tailscale.mjs" disable
   systemctl --user disable --now omarchy-jarvis.service 2>/dev/null || true
   rm -f "$UNIT"
   systemctl --user daemon-reload 2>/dev/null || true

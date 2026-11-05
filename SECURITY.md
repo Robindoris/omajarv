@@ -36,9 +36,16 @@ are intentionally retained. Generic removal in the marketplace cannot stop an
 independently installed systemd service. Delete retained data separately if desired.
 
 Local process visibility: phone QR and clipboard helpers receive bearer links on
-stdin. Browser opening uses a private temporary HTML handoff, removed after a
+stdin. Offline status also passes its bearer URL to jq over stdin. Browser opening uses a private temporary HTML handoff, removed after a
 short delay (an interrupted launcher can leave it in the private temp directory).
 Agent requests are supported only through the verified Codex and Claude stdin
 adapters; other adapters fail closed rather than put requests in process arguments.
 Speech uses whisper-cli even with an older server configuration. Unauthenticated
 localhost whisper-server listeners are never used; install whisper-cli for voice.
+
+Private Tailscale Serve forwards HTTP over a Unix socket in JARVIS's private state
+directory, with socket permissions restricted to the current user. It does not
+trust a replacement listener on the bridge's TCP port. Startup, stop and uninstall
+retire the legacy certificate-unverified TCP mapping; uninstall removes JARVIS's
+socket mapping too. Cleanup preserves other applications' Serve routes and fails
+closed when an installed Tailscale service cannot be inspected.

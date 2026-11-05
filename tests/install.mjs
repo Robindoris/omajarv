@@ -7,6 +7,7 @@ const root=path.resolve(import.meta.dirname,'..');
 const home=fs.mkdtempSync(path.join(os.tmpdir(),'jarvis-clean-install-'));
 fs.mkdirSync(path.join(home,'bin'));
 for(const name of ['systemctl','omarchy'])fs.writeFileSync(path.join(home,'bin',name),'#!/bin/sh\nexit 0\n',{mode:0o755});
+fs.writeFileSync(path.join(home,'bin/tailscale'),'#!/bin/sh\nprintf \'{}\\n\'\n',{mode:0o755});
 const env={...process.env,PATH:path.join(home,'bin')+':'+process.env.PATH,HOME:home,XDG_CONFIG_HOME:path.join(home,'.config'),XDG_STATE_HOME:path.join(home,'.local/state')};
 try {
  // Exercise actual unit generation from a checkout whose path contains spaces.

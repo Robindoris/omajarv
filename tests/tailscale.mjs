@@ -10,12 +10,13 @@ try {
   fs.writeFileSync(path.join(home, 'bin/tailscale'), `#!/usr/bin/env node
 const args = process.argv.slice(2);
 if(args[0] === 'status') console.log(JSON.stringify({BackendState: 'Running', Self: {DNSName: 'test.tail123.ts.net.', Online: true}}));
-else if(args[1] === 'status') console.log(process.env.TEST_SERVE || '{}');
+else if(args[1] === 'status') console.log(require('fs').existsSync(process.env.HOME + '/removed') ? '{}' : process.env.TEST_SERVE || '{}');
+else if(args.at(-1) === 'off') {require('fs').writeFileSync(process.env.HOME + '/removed', 'yes'); require('fs').appendFileSync(process.env.HOME + '/cleanup', JSON.stringify(args) + '\\n');}
 else {require('fs').writeFileSync(process.env.HOME + '/invoked', JSON.stringify(args)); console.log('Enabled');}
 `, { mode: 0o755 });
   const env = {...process.env, HOME: home, PATH: path.join(home, 'bin') + ':' + process.env.PATH};
   const run = (action, serve = {}) => spawnSync(process.execPath, [path.join(root, 'server/lib/tailscale.mjs'), action], {encoding: 'utf8', env: {...env, TEST_SERVE: JSON.stringify(serve)}});
-  const serve = {TCP: {'443': {HTTPS: true}}, Web: {'test.tail123.ts.net:443': {Handlers: {'/': {Proxy: 'https+insecure://localhost:4317'}}}}};
+  const serve = {TCP: {'443': {HTTPS: true}}, Web: {'test.tail123.ts.net:443': {Handlers: {'/': {Proxy: 'unix:' + path.join(home, '.local/state/omarchy-jarvis/serve.sock')}}}}};
   assert.equal(JSON.parse(run('status').stdout).state, 'off');
   assert.equal(JSON.parse(run('status', serve).stdout).url, 'https://test.tail123.ts.net');
   assert.equal(run('enable', serve).status, 0);
@@ -28,6 +29,19 @@ else {require('fs').writeFileSync(process.env.HOME + '/invoked', JSON.stringify(
   assert.equal(JSON.parse(run('status', funnel).stdout).state, 'off');
   assert.equal(run('enable', funnel).status, 1);
   assert.equal(run('enable').status, 0);
-  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(home, 'invoked'))), ['serve', '--bg', '--https=443', 'https+insecure://localhost:4317']);
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(home, 'invoked'))), ['serve', '--bg', '--https=443', 'unix:' + path.join(home, '.local/state/omarchy-jarvis/serve.sock')]);
+  fs.unlinkSync(path.join(home, 'invoked'));
+  const legacy = structuredClone(serve);
+  legacy.Web['test.tail123.ts.net:443'].Handlers['/'].Proxy = 'https+insecure://localhost:4317';
+  assert.equal(JSON.parse(run('status', legacy).stdout).state, 'off');
+  assert.equal(run('enable', legacy).status, 0);
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(home, 'cleanup'), 'utf8').trim()), ['serve', '--https=443', '--set-path=/', 'off']);
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(home, 'invoked'))), ['serve', '--bg', '--https=443', 'unix:' + path.join(home, '.local/state/omarchy-jarvis/serve.sock')]);
+  fs.unlinkSync(path.join(home, 'removed'));
+  fs.unlinkSync(path.join(home, 'cleanup'));
+  assert.equal(run('disable', conflict).status, 0);
+  assert.equal(fs.existsSync(path.join(home, 'cleanup')), false);
+  assert.equal(run('disable', serve).status, 0);
+  assert.ok(fs.existsSync(path.join(home, 'cleanup')));
   console.log('PASS: stable URL, disabled Serve, idempotent enable, conflicting service protection, public Funnel rejection, persistent private Serve arguments.');
 } finally { fs.rmSync(home, {recursive: true, force: true}); }
