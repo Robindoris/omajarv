@@ -53,11 +53,14 @@ sessions while retaining the shared transcript. A stale revision or active chat
 returns 409; invalid fields return 400. No other configuration fields are editable
 through this endpoint.
 
-`GET /api/history` includes this object as `profile`, along with the shared
+`GET /api/history` includes names, stage and revision as `profile` (without the
+personality prompt), along with the shared
 personalization exchange. During personalization, `POST /api/chat` must include
 the current `profileRevision`. Each answer advances one step and returns ordinary
 `token` and `done` SSE events, with the updated `profile` in `done`. These steps
-run locally without invoking an agent. Conversation reset preserves personality.
+run locally without invoking an agent. The `done.profile` object also omits the
+prompt. Conversation reset preserves personality. Agent errors contain
+application-authored messages, not raw provider/tool stderr.
 
 ## `POST /api/stt`
 

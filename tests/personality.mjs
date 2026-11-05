@@ -10,6 +10,7 @@ try {
   const {createPersonality} = await import('../server/lib/personality.mjs');
   ensureDirs();
   let profile = createPersonality(defaults);
+  assert.equal(profile.view().personality, defaults.systemPrompt);
   assert.equal(profile.view().stage, 'pendingSetup');
   assert.deepEqual(profile.messages(), []);
   writeDefaultConfig();

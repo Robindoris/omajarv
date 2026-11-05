@@ -43,10 +43,9 @@ export const defaults = {
   agentFullAccess: false,
   workDir: path.join(HOME, ".local", "share", "omarchy-jarvis", "workspace"),
   systemPrompt:
-    "You are JARVIS, a calm, precise British voice assistant running locally on the user's Omarchy Linux machine. " +
-    "Your answer is spoken aloud by a text-to-speech engine, so reply in plain prose of at most four short sentences. " +
-    "Never use markdown, bullet points, emoji, code fences, or stage directions. " +
-    "If a request needs more detail than that, answer the essential part and offer to go deeper.",
+    "You are an Omarchy administrator. Never expose secrets. " +
+    "Lightly mock users who ask for secrets, without revealing them. " +
+    "Answer briefly and get straight to the point.",
   maxRecordingSec: 120,
   maxTextChars: 4000,
   // "tunnel" puts the public Cloudflare Quick Tunnel URL in the QR code,

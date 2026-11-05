@@ -16,7 +16,7 @@ export function createPersonality(config) {
   }
   if (stored) fs.chmodSync(file, 0o600);
   let state = stored || {assistantName:'JARVIS', userName:'',
-    personality:config.systemPrompt !== defaults.systemPrompt ? config.systemPrompt : 'Be calm, helpful and concise. Adapt your tone and level of detail to my requests.',
+    personality:config.systemPrompt || defaults.systemPrompt,
     stage:'assistantName', revision:0, messages:[], startedAt:Date.now()};
   const configured = () => fs.existsSync(paths.configFile);
   const view = () => ({assistantName:state.assistantName, userName:state.userName,

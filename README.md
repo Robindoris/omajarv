@@ -223,6 +223,7 @@ node tests/agents.mjs        # OpenCode/Hermes transport, sessions and Stop
 node tests/local-privacy.mjs
 node tests/personality.mjs
 node tests/sudo.mjs          # encrypted password transport; no real sudo
+node tests/privacy-audit.mjs # requires FFmpeg; checks privacy boundaries with fixtures
 node tests/theme-browser.mjs  # requires Chromium
 omarchy plugin validate .
 ```

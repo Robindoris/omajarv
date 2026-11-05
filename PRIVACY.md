@@ -47,8 +47,10 @@ explicit networking choice. All APIs require the access token. An anonymous requ
 never receives that token, regardless of LAN, proxy headers, or connection origin.
 The palette-only stylesheet is public; conversation and setup information are not.
 
-No access link or transcription text is written to normal server logs. Agent errors
-may still contain provider details; review logs before sharing them. There is no
+No access link, personality prompt or transcription text is written to normal
+server logs. Raw agent and speech-tool diagnostics are not forwarded to logs,
+history or error responses because those tools can echo prompts and credentials.
+Agent CLI/provider storage and logs remain under those tools' own policies. There is no
 claim that the process is sandboxed by JARVIS. Omarchy plugins themselves run with
 your user permissions. Review the source and the configured agent before use.
 

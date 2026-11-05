@@ -20,6 +20,12 @@ Publication-preparation changes:
 - Model downloads require consent, pinned revision, expected size and SHA-256.
 - Added first-run model discovery without scanning the whole home directory.
 - Release builder uses a source allowlist and rejects symlinks and credential patterns.
+- Raw tool/provider diagnostics are replaced by application-authored errors.
+- Cloudflare verifies the local bridge certificate rather than accepting any TLS origin.
+- Audio decoding reads a restricted pipe and cannot follow uploaded network/file playlists.
+- Native labels render as plain text; phone pages restrict external resources and framing.
+- Routine phone API calls use an authentication header rather than bearer query strings.
+- Personality and history writes are atomic private files, including replacements of older files.
 
 Remaining trust boundaries:
 
@@ -43,6 +49,14 @@ providers and tool execution remain outside JARVIS's control. Remote authenticat
 is a shared bearer token, not per-device accounts or an enterprise identity system.
 The development HTTP mode is for local tests, not remote use. This review does not
 independently audit Whisper, Piper, Node.js, Cloudflare, Tailscale, agents, or models.
+
+Personality instructions are intentionally sent to the selected coding agent and
+can be retained or repeated by that agent/provider. They are not a secret vault.
+The full prompt is available through authenticated personality settings; routine
+history responses include only names, onboarding stage and revision. Answers
+typed during onboarding remain part of the user's local transcript until cleared.
+Initial phone links and installed-app manifests still contain the bearer token by
+design; keep them private. See [the source privacy audit](docs/PRIVACY-AUDIT.md).
 
 Uninstall with `jarvis uninstall` before removing a marketplace copy; this stops and
 disables the user service and removes its launcher. Models, config and local history
