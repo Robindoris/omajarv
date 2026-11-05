@@ -108,6 +108,10 @@ The computer must remain on and the JARVIS service must be running.
 
 Tailscale uses private Serve, never public Funnel. JARVIS refuses to overwrite
 another service already using the required Tailscale listener.
+The protected Unix socket backend may require administrator authorization. Enable
+uses existing noninteractive sudo permission when available, otherwise requests
+authorization through Polkit. Only the system `/usr/bin/tailscale` command is
+elevated. Cancelling leaves the tunnel disabled; press Enable again to retry.
 
 The phone interface follows your **active Omarchy theme**: background, text,
 controls, reactor and particles. Open pages refresh their colors within five
