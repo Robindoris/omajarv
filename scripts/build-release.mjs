@@ -7,7 +7,7 @@ const root=path.resolve(import.meta.dirname,'..');
 const output=path.resolve(process.argv[2] || path.join(root,'dist/omarchy-jarvis'));
 if(output===root || root.startsWith(output+path.sep)) throw new Error('Unsafe output directory');
 if(fs.existsSync(output) && fs.readdirSync(output).length) throw new Error('Output directory must be empty; existing files were kept');
-const fixed=['manifest.json','README.md','LICENSE','SECURITY.md','PRIVACY.md','install.sh','.gitignore'];
+const fixed=['manifest.json','README.md','LICENSE','SECURITY.md','PRIVACY.md','install.sh','.gitignore','preview.png','docs/screenshots/desktop-assistant.png','docs/screenshots/phone-voice.png'];
 const directories=['bin','server','plugin','docs','scripts','tests','systemd','skills'];
 const allowed=file=>/\.(?:mjs|qml|js|css|html|md|template)$/.test(file) || ['jarvis','manifest.json','icon-192.png','icon-512.png'].includes(path.basename(file));
 const files=[...fixed];

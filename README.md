@@ -11,6 +11,19 @@ replies play on the device you are using.
 The coding agent handles the request using its own tools, permissions and provider.
 **Local speech does not mean a local coding model.**
 
+## Screenshots
+
+### Voice interface
+
+![JARVIS voice interface with animated reactor and conversation controls](preview.png)
+
+### Desktop assistant and phone
+
+<p>
+  <img src="docs/screenshots/desktop-assistant.png" alt="Native JARVIS desktop assistant with shared chat and attachment controls" width="360">
+  <img src="docs/screenshots/phone-voice.png" alt="JARVIS phone voice interface with conversation and microphone controls" width="360">
+</p>
+
 ## Get it running
 
 You need Omarchy Quattro, Node.js **22 or newer**, `curl`, `jq` and `openssl`, plus
