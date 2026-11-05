@@ -81,8 +81,9 @@ function adapter(id, { prompt, session, config, images = [] }) {
       const accessArgs = config.codexFullAccess === true
         ? ["--dangerously-bypass-approvals-and-sandbox"]
         : ["--approve-for-me"];
+      // Exec-only options must precede the resume subcommand.
       const base = session
-        ? ["exec", "resume", "--json", "--skip-git-repo-check", ...accessArgs, session, "-"]
+        ? ["exec", ...accessArgs, "resume", "--json", "--skip-git-repo-check", session, "-"]
         : ["exec", "--json", "--skip-git-repo-check", ...accessArgs, "-"];
       for (const image of images) base.splice(base.length - 1, 0, "--image", image);
       return {
