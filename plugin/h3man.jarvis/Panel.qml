@@ -366,6 +366,15 @@ Ui.Panel {
     }
   }
   Process { id: copyProc; stdinEnabled: true }
+  // Never give Qt a bearer URL: launchers can expose URLs in process arguments.
+  Process {
+    id: openProc
+    command: [root.jarvisBin, "open", "--stdin"]
+    stdinEnabled: true
+    onExited: function(code) {
+      if (code !== 0) root.notice = "Unable to open phone link"
+    }
+  }
   Timer {
     interval: 2500; running: root.opened; repeat: true
     onTriggered: {
@@ -748,7 +757,11 @@ Ui.Panel {
               Ui.Button {
               focusable: true
               Keys.onEscapePressed: root.close()
-              Layout.fillWidth: true; text: "Open"; bordered: true; enabled: root.link !== ""; onClicked: Qt.openUrlExternally(root.link) }
+              Layout.fillWidth: true; text: "Open"; bordered: true; enabled: root.link !== "" && !openProc.running; onClicked: {
+                openProc.running = true
+                openProc.write(root.link)
+                openProc.closeWriteChannel()
+              } }
             }
             Text { textFormat: Text.PlainText; Layout.fillWidth: true; text: "Voice input: " + (root.status.stt && root.status.stt.ready ? "ready" : "unavailable") + " · Voice output: " + (root.status.tts && root.status.tts.ready ? "ready" : "unavailable"); color: OmarchyCommons.Color.muted; wrapMode: Text.WordWrap; font.family: root.fontFamily; font.pixelSize: Style.font.caption }
           }
