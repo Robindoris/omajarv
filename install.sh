@@ -6,6 +6,7 @@
 #   ./install.sh --no-models     skip model downloads
 #   ./install.sh --no-service    skip the systemd user service
 #   ./install.sh --no-plugin     skip installing/enabling the bar widget
+#   ./install.sh --install-agent-skill  opt in to global coding-agent instructions
 #   ./install.sh --uninstall     remove service, symlinks and plugin (keeps models)
 
 set -euo pipefail
@@ -27,6 +28,7 @@ do_packages=true
 do_models=true
 do_service=true
 do_plugin=true
+do_agent_skill=false
 uninstall=false
 
 for arg in "$@"; do
@@ -35,9 +37,10 @@ for arg in "$@"; do
     --no-models) do_models=false ;;
     --no-service) do_service=false ;;
     --no-plugin) do_plugin=false ;;
+    --install-agent-skill) do_agent_skill=true ;;
     --uninstall) uninstall=true ;;
     -h | --help)
-      sed -n '2,12p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+      sed -n '2,13p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
     *)
@@ -97,8 +100,10 @@ mkdir -p "$STATE_DIR" "$CONFIG_DIR" "$DATA_DIR" "$WHISPER_DIR" "$PIPER_DIR" "$BI
 
 # ------------------------------------------------------------ shared skill
 
-say "Installing the shared JARVIS development skill"
-node "$ROOT/scripts/install-skill.mjs"
+if $do_agent_skill; then
+  say "Installing global JARVIS coding-agent instructions (explicit opt-in)"
+  node "$ROOT/scripts/install-skill.mjs" --install-agent-skill
+fi
 
 # ---------------------------------------------------------------- packages
 

@@ -34,7 +34,7 @@ sudo dialogs at mobile sizes. Use fixture screenshots, not authenticated live pa
 ## Source packages
 
 Keep `skills/omajarv-dev/` current with feature changes; it is the portable skill
-installed by `scripts/install-skill.mjs` into shared user skills during setup. Never
+installed by `scripts/install-skill.mjs` into shared user skills only with explicit `--install-agent-skill` consent. Never
 copy a developer machine's personal `local.md` into that bundle.
 
 scripts/build-release.mjs uses an allowlist and rejects credential signatures and

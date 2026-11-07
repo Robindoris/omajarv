@@ -3,6 +3,11 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+// Require dedicated consent even when this helper is invoked directly.
+if (process.argv.length !== 3 || process.argv[2] !== '--install-agent-skill') {
+  console.error('Global coding-agent skill installation requires --install-agent-skill.');
+  process.exit(1);
+}
 const source = path.resolve(import.meta.dirname, '../skills/omajarv-dev');
 const parent = path.join(os.homedir(), '.agents/skills');
 const target = path.join(parent, 'omajarv-dev');
