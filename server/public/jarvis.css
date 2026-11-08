@@ -610,6 +610,89 @@ body[data-state="error"] .readout-v { color: var(--red); }
 .line:not(.streaming) .caret { display: none; }
 
 /* ------------------------------------------------------------------ */
+/* Voice ticker (voice view: one-line transcript mirror)               */
+/* ------------------------------------------------------------------ */
+
+.voice-ticker {
+  position: relative;
+  display: none;
+  flex: 0 0 auto;
+  width: 100%;
+  min-width: 0;
+  align-items: baseline;
+  gap: 9px;
+  padding: 7px 11px 8px;
+  border: 1px solid var(--line);
+  background:
+    linear-gradient(135deg, rgba(var(--mid-rgb), 0.05), transparent 38%),
+    rgba(var(--bg-rgb), 0.58);
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+}
+
+.voice-ticker::before,
+.voice-ticker::after {
+  content: "";
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  border: 1px solid var(--line-strong);
+  pointer-events: none;
+}
+
+.voice-ticker::before { left: -1px; top: -1px; border-right: 0; border-bottom: 0; }
+.voice-ticker::after { right: -1px; bottom: -1px; border-left: 0; border-top: 0; }
+
+.ticker-role {
+  flex: 0 0 auto;
+  font-size: 0.5rem;
+  letter-spacing: 0.14em;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.ticker-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-height: 5.8em; /* exactly 4 lines at line-height 1.45 */
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: var(--text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  scrollbar-width: none;
+}
+
+.ticker-text::-webkit-scrollbar { display: none; }
+
+.voice-ticker.is-user .ticker-role { color: var(--mid); }
+.voice-ticker.is-assistant .ticker-role { color: var(--core); }
+
+.voice-ticker.is-system .ticker-text,
+.voice-ticker.is-error .ticker-text {
+  font-size: 0.56rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.voice-ticker.is-error .ticker-text { color: var(--red); }
+
+.voice-ticker.is-streaming .ticker-text::after {
+  content: "";
+  display: inline-block;
+  width: 0.46em;
+  height: 0.95em;
+  margin-left: 3px;
+  vertical-align: -0.12em;
+  background: var(--core);
+  box-shadow: 0 0 7px rgba(var(--core-rgb), 0.6);
+  animation: blink 0.95s steps(1) infinite;
+}
+
+/* ------------------------------------------------------------------ */
 /* Controls                                                            */
 /* ------------------------------------------------------------------ */
 
@@ -1018,7 +1101,8 @@ body[data-state="error"] .ptt { border-color: rgba(var(--red-rgb), 0.45); }
   }
 
   .caret,
-  .boot-cursor {
+  .boot-cursor,
+  .voice-ticker.is-streaming .ticker-text::after {
     animation: none;
     opacity: 0.85;
   }
@@ -1064,7 +1148,15 @@ body[data-view="chat"] .ptt-label { display: none; }
 body[data-view="chat"] .ptt-timer { bottom: 3px; }
 body[data-view="chat"] .ptt-icon { width: 23px; height: 23px; }
 body[data-view="chat"] .ptt.is-recording .ptt-icon { opacity: .3; }
+body[data-view="voice"] .stage { justify-content: center; }
 body[data-view="voice"] .reactor-wrap { width: min(42vw, 26dvh, 280px); flex-shrink: 0; }
+body[data-view="voice"] .transcript-wrap { display: none; }
+/* Ticker and attachment icons sink to the bottom of the stage,
+   just above the push-to-talk controls; the reactor stays centered
+   in the space that remains above them. */
+body[data-view="voice"] .voice-ticker { display: flex; margin-top: auto; }
+body[data-view="voice"] .reactor-wrap { margin-top: auto; }
+body[data-view="voice"] .attachment-tools { margin-bottom: 2px; }
 body[data-view="voice"] .ptt { width: 104px; height: 104px; }
 .grid, .scanlines, .frame-corners { opacity: .15; }
 @media (max-height: 600px) {

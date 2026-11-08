@@ -12,7 +12,7 @@
   <meta name="robots" content="noindex, nofollow">
   <title>J.A.R.V.I.S.</title>
   <link rel="apple-touch-icon" href="/icon-192.png">
-  <link rel="stylesheet" href="jarvis.css?v=attachment-icons-2">
+  <link rel="stylesheet" href="jarvis.css?v=voice-ticker-3">
   <link rel="stylesheet" href="/theme.css">
 </head>
 <body data-state="boot" data-view="chat">
@@ -98,6 +98,10 @@
         <button class="latest-btn" id="latestBtn" type="button" hidden>Jump to latest ↓</button>
         <div class="transcript" id="transcript" role="log" aria-live="polite" aria-relevant="additions text" aria-atomic="false"></div>
       </section>
+      <div class="voice-ticker" id="voiceTicker" role="log" aria-live="polite" aria-relevant="additions text">
+        <span class="ticker-role" id="tickerRole">STANDBY</span>
+        <span class="ticker-text" id="tickerText"></span>
+      </div>
       <div class="attachment-tools" role="group" aria-label="Attachments">
         <button id="attachBtn" type="button" aria-label="Attach files" aria-describedby="attachmentHint" data-tooltip="Attach files">
           <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m8 12 6.5-6.5a3.5 3.5 0 0 1 5 5L10 20a5 5 0 0 1-7-7l9-9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="m6.5 14 8-8a1.5 1.5 0 0 1 2 2l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
@@ -167,6 +171,6 @@
   </div>
 
   <noscript><div class="noscript">J.A.R.V.I.S. requires JavaScript.</div></noscript>
-  <script src="jarvis.js?v=attachments-1"></script>
+  <script src="jarvis.js?v=voice-ticker-2"></script>
 </body>
 </html>

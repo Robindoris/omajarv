@@ -111,6 +111,9 @@
     composerClose: $('#composerClose'),
     transcript: $('#transcript'),
     transcriptHint: $('#transcriptHint'),
+    voiceTicker: $('#voiceTicker'),
+    tickerRole: $('#tickerRole'),
+    tickerText: $('#tickerText'),
     statusPill: $('#statusPill'),
     statusText: $('#statusText'),
     agentName: $('#agentName'),
@@ -494,6 +497,23 @@
     while (t.children.length > MAX_TRANSCRIPT_LINES) t.removeChild(t.firstElementChild);
   }
 
+  // Voice view has no transcript window: mirror the latest line into a one-line ticker.
+  function mirrorTicker(line) {
+    if (!el.voiceTicker || !el.tickerRole || !el.tickerText || !line) return;
+    var roleEl = line.querySelector('.line-role');
+    var textEl = line.querySelector('.line-text');
+    if (!roleEl || !textEl) return;
+    el.tickerRole.textContent = roleEl.textContent;
+    el.tickerText.textContent = textEl.textContent;
+    // Keep the newest text visible; the box clips to a few wrapped lines.
+    el.tickerText.scrollTop = el.tickerText.scrollHeight;
+    el.voiceTicker.classList.toggle('is-user', line.classList.contains('user'));
+    el.voiceTicker.classList.toggle('is-assistant', line.classList.contains('assistant'));
+    el.voiceTicker.classList.toggle('is-system', line.classList.contains('system'));
+    el.voiceTicker.classList.toggle('is-error', line.classList.contains('error'));
+    el.voiceTicker.classList.toggle('is-streaming', line.classList.contains('streaming'));
+  }
+
   // kind: 'user' | 'assistant' | 'system' | 'error'
   function addLine(kind, text, options) {
     options = options || {};
@@ -524,6 +544,7 @@
 
     trimTranscript();
     if (follow) scrollTranscript(true);
+    mirrorTicker(line);
 
     return {
       root: line,
@@ -533,9 +554,11 @@
         var stick = nearBottom();
         textEl.textContent = value;
         if (stick) scrollTranscript(true);
+        mirrorTicker(line);
       },
       finish: function () {
         line.classList.remove('streaming');
+        mirrorTicker(line);
       }
     };
   }
