@@ -1,0 +1,174 @@
+#!/usr/bin/env python3
+"""kb - command line access to the local Kanban board.
+
+Examples
+  kb add "Renew domain" --col todo --priority high --due 2026-12-01
+  kb add "Call the dentist" -c todo -n "ask about Friday"
+  kb list
+  kb list --col doing --json
+  kb move 12 done
+  kb done 12
+  kb edit 12 --title "New title" --priority low
+  kb rm 12
+  kb cols
+  kb url
+"""
+
+import argparse
+import json
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+import app  # noqa: E402  (local module, shares the same SQLite database)
+
+
+def short(task, coltitle=None):
+    bits = [f"#{task['id']}"]
+    if coltitle:
+        bits.append(f"[{coltitle}]")
+    bits.append(task["title"])
+    if task.get("priority") and task["priority"] != "normal":
+        bits.append(f"!{task['priority']}")
+    if task.get("due"):
+        bits.append(f"due {task['due']}")
+    return " ".join(bits)
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(prog="kb", description="Kanban board CLI")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+
+    p = sub.add_parser("add", help="add a task")
+    p.add_argument("title", nargs="+")
+    p.add_argument("-c", "--col", default=None, help="column id or title")
+    p.add_argument("-n", "--notes", default="")
+    p.add_argument("-p", "--priority", default="normal", choices=app.PRIORITIES)
+    p.add_argument("-d", "--due", default=None)
+    p.add_argument("--json", action="store_true")
+
+    p = sub.add_parser("list", help="list tasks")
+    p.add_argument("-c", "--col", default=None)
+    p.add_argument("--json", action="store_true")
+
+    p = sub.add_parser("move", help="move a task to a column")
+    p.add_argument("id", type=int)
+    p.add_argument("col")
+    p.add_argument("-i", "--index", type=int, default=None)
+
+    p = sub.add_parser("done", help="mark a task done")
+    p.add_argument("id", type=int)
+
+    p = sub.add_parser("edit", help="edit a task")
+    p.add_argument("id", type=int)
+    p.add_argument("-t", "--title")
+    p.add_argument("-n", "--notes")
+    p.add_argument("-p", "--priority", choices=app.PRIORITIES)
+    p.add_argument("-d", "--due")
+
+    p = sub.add_parser("rm", help="delete a task")
+    p.add_argument("id", type=int)
+
+    sub.add_parser("cols", help="list columns")
+    sub.add_parser("url", help="print the board URL")
+
+    p = sub.add_parser("backup", help="create a consistent SQLite snapshot")
+    p.add_argument("path", help="new backup file; must not exist")
+    p = sub.add_parser("restore", help="restore a backup with the board server stopped")
+    p.add_argument("path", help="backup file")
+    p.add_argument("--confirm-restore", action="store_true", help="confirm replacement and that all board servers are stopped")
+
+    args = ap.parse_args()
+    if args.cmd in ("backup", "restore"):
+        import board_backup
+        try:
+            if args.cmd == "backup":
+                print("Backup saved:", board_backup.backup(app.DB_PATH, args.path))
+            else:
+                rollback = board_backup.restore(args.path, app.DB_PATH, args.confirm_restore)
+                print("Board restored. Previous board backup:", rollback or "no previous database")
+            return 0
+        except (OSError, ValueError, board_backup.sqlite3.Error) as exc:
+            print(f"kb: {exc}", file=sys.stderr)
+            return 2
+    app.init_db()
+    con = app.connect()
+    try:
+        with con:
+            if args.cmd == "add":
+                t = app.add_task(con, " ".join(args.title), args.notes,
+                                 args.col, args.priority, args.due)
+                if args.json:
+                    print(json.dumps(t, ensure_ascii=False))
+                else:
+                    title = con.execute(
+                        "SELECT title FROM columns WHERE id=?", (t["col"],)
+                    ).fetchone()[0]
+                    print(f"added {short(t, title)}")
+
+            elif args.cmd == "list":
+                b = app.board(con)
+                out = []
+                for col in b["columns"]:
+                    if args.col and col["id"] != app.resolve_col(con, args.col):
+                        continue
+                    for t in col["tasks"]:
+                        out.append({**t, "col_title": col["title"]})
+                if args.json:
+                    print(json.dumps(out, ensure_ascii=False, indent=2))
+                elif not out:
+                    print("(no tasks)")
+                else:
+                    for col in b["columns"]:
+                        rows = [t for t in out if t["col"] == col["id"]]
+                        if not rows:
+                            continue
+                        print(f"\n{col['title']}  ({len(rows)})")
+                        for t in rows:
+                            print("  " + short(t))
+
+            elif args.cmd == "move":
+                t = app.move_task(con, args.id, args.col, args.index)
+                print(f"moved {short(t)}")
+
+            elif args.cmd == "done":
+                t = app.move_task(con, args.id, "done")
+                print(f"done {short(t)}")
+
+            elif args.cmd == "edit":
+                fields = {}
+                for key in ("title", "notes", "priority", "due"):
+                    val = getattr(args, key)
+                    if val is not None:
+                        fields[key] = val
+                if not fields:
+                    print("nothing to change")
+                    return 0
+                t = app.update_task(con, args.id, fields)
+                print(f"updated {short(t)}")
+
+            elif args.cmd == "rm":
+                t = app.delete_task(con, args.id)
+                print(f"deleted #{t['id']} {t['title']}")
+
+            elif args.cmd == "cols":
+                for c in app.board(con)["columns"]:
+                    print(f"{c['id']:<12} {c['title']:<16} {len(c['tasks'])} task(s)")
+
+            elif args.cmd == "url":
+                ip = app.tailscale_ip() or "127.0.0.1"
+                port = os.environ.get("KANBAN_PORT", "8787")
+                print(f"http://{ip}:{port}")
+    except KeyError as exc:
+        print(f"kb: not found: {exc}", file=sys.stderr)
+        return 1
+    except ValueError as exc:
+        print(f"kb: {exc}", file=sys.stderr)
+        return 2
+    finally:
+        con.close()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#101014">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Kanban</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <h1>Kanban</h1>
+    <span id="status" class="status" aria-live="polite"></span>
+  </div>
+  <div class="tools">
+    <input id="search" aria-label="Filter tasks" type="search" placeholder="Filter tasks…" autocomplete="off" spellcheck="false">
+    <button id="new-task" class="btn primary">New task</button>
+  </div>
+</header>
+
+<section class="filters" aria-label="Task filters">
+  <label>Priority<select id="filter-priority"><option value="">All priorities</option><option value="high">High</option><option value="normal">Normal</option><option value="low">Low</option></select></label>
+  <label>Due date<select id="filter-due"><option value="">Any date</option><option value="overdue">Overdue</option><option value="today">Due today</option><option value="upcoming">Upcoming</option><option value="none">No due date</option></select></label>
+  <label>Execution<select id="filter-state"><option value="">All states</option><option value="idle">Not run</option><option value="queued">Queued</option><option value="waiting">Waiting for JARVIS</option><option value="running">Running</option><option value="done">Completed</option><option value="failed">Failed</option><option value="interrupted">Interrupted</option><option value="cancelled">Stopped</option></select></label>
+  <button id="clear-filters" class="btn" type="button">Clear filters</button>
+  <span id="filter-count" role="status" aria-live="polite"></span>
+</section>
+
+<p id="keyboard-help" class="keyboard-help">Keyboard: Tab to a card; arrows navigate; Enter or Space edits; Alt + Left/Right moves between columns.</p>
+<main id="board" class="board" aria-label="Kanban board"></main>
+
+<dialog id="sheet" class="sheet">
+  <form id="sheet-form">
+    <div class="sheet-head">
+      <span id="sheet-id" class="pill"></span>
+      <button type="button" id="sheet-close" class="icon" aria-label="Close">✕</button>
+    </div>
+    <label class="field">
+      <span>Title</span>
+      <input id="f-title" type="text" name="title" required maxlength="300" autocomplete="off">
+    </label>
+    <label class="field">
+      <span>Notes</span>
+      <textarea id="f-notes" name="notes" rows="4" maxlength="8000"></textarea>
+    </label>
+    <div class="row">
+      <label class="field">
+        <span>Column</span>
+        <select id="f-col" name="col"></select>
+      </label>
+      <label class="field">
+        <span>Priority</span>
+        <select id="f-priority" name="priority">
+          <option value="low">Low</option>
+          <option value="normal">Normal</option>
+          <option value="high">High</option>
+        </select>
+      </label>
+    </div>
+    <div class="row">
+      <label class="field">
+        <span>Due</span>
+        <input id="f-due" name="due" type="date">
+      </label>
+      <div class="field grow"></div>
+    </div>
+    <label class="field"><span>Repeat</span>
+      <select id="f-repeat" name="repeat"><option value="none">Does not repeat</option><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option></select>
+    </label>
+    <section class="run-panel" id="run-panel" hidden>
+      <div class="run-head">
+        <span class="run-title">Agent</span>
+        <span id="run-state" class="pill">idle</span>
+        <span id="run-meta" class="run-meta"></span>
+        <div class="spacer"></div>
+        <button type="button" id="run-start" class="btn small">▶ Run</button>
+        <button type="button" id="run-stop" class="btn small danger" hidden>Stop</button>
+      </div>
+      <pre id="run-output" class="run-output" hidden></pre>
+    </section>
+    <footer class="sheet-foot">
+      <button type="button" id="sheet-delete" class="btn danger">Delete</button>
+      <div class="spacer"></div>
+      <button type="button" id="sheet-cancel" class="btn">Cancel</button>
+      <button type="submit" class="btn primary">Save</button>
+    </footer>
+  </form>
+</dialog>
+
+<div id="toast" class="toast" role="status"></div>
+
+<script src="app.js"></script>
+</body>
+</html>

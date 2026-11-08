@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title>Kanban</title>
+  <rect width="64" height="64" rx="14" fill="#101014"/>
+  <rect x="12" y="12" width="11" height="27" rx="4" fill="#70d6ff"/>
+  <rect x="26.5" y="12" width="11" height="39" rx="4" fill="#b8f36a"/>
+  <rect x="41" y="12" width="11" height="21" rx="4" fill="#ff9f68"/>
+</svg>
