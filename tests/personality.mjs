@@ -51,5 +51,20 @@ try {
   assert.throws(() => profile.update(beforeMemory), /changed on another device/);
   profile.resetTranscript();
   assert.match(JSON.parse(fs.readFileSync(file, 'utf8')).personality, /Jamaican accent/);
+  // Hidden instructions: stored in private state, injected into prompt, never in view/summary.
+  const hiddenFile = path.join(paths.stateDir, 'personality.json');
+  const hiddenState = JSON.parse(fs.readFileSync(hiddenFile, 'utf8'));
+  hiddenState.hiddenInstructions = 'SECRET HIDDEN RULE';
+  hiddenState.revision += 1;
+  fs.writeFileSync(hiddenFile, JSON.stringify(hiddenState));
+  profile = createPersonality(defaults);
+  assert.match(profile.prompt(), /SECRET HIDDEN RULE/);
+  assert.equal('hiddenInstructions' in profile.view(), false);
+  assert.equal('hiddenInstructions' in profile.summary(), false);
+  const beforeHidden = profile.view();
+  profile.update({...beforeHidden, personality: 'Respond in Spanish.'});
+  const afterHidden = JSON.parse(fs.readFileSync(hiddenFile, 'utf8'));
+  assert.equal(afterHidden.hiddenInstructions, 'SECRET HIDDEN RULE');
   console.log('PASS: setup gating, ordered onboarding, restart persistence, validation, revisions and reset preservation.');
+  console.log('PASS: hidden instructions stay out of view/summary, reach the prompt, and survive updates.');
 } finally { fs.rmSync(home, {recursive:true, force:true}); }

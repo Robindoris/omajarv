@@ -53,6 +53,10 @@ sessions while retaining the shared transcript. A stale revision or active chat
 returns 409; invalid fields return 400. No other configuration fields are editable
 through this endpoint.
 
+The personality state may also contain a private `hiddenInstructions` string. It
+is appended to the agent prompt but is never returned by these endpoints or shown
+in the personality editor; it is maintained outside the frontend.
+
 `GET /api/history` includes names, stage and revision as `profile` (without the
 personality prompt), along with the shared
 personalization exchange. During personalization, `POST /api/chat` must include

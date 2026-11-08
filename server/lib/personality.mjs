@@ -17,7 +17,7 @@ export function createPersonality(config) {
   if (stored) fs.chmodSync(file, 0o600);
   let state = stored || {assistantName:'JARVIS', userName:'',
     personality:config.systemPrompt || defaults.systemPrompt,
-    stage:'assistantName', revision:0, messages:[], startedAt:Date.now()};
+    hiddenInstructions:'', stage:'assistantName', revision:0, messages:[], startedAt:Date.now()};
   // Agents may append learned preferences directly to the private state file.
   // Refresh before reads and writes so the UI and prompt share that live state.
   const refresh = () => {
@@ -25,7 +25,8 @@ export function createPersonality(config) {
       const next = JSON.parse(fs.readFileSync(file, 'utf8'));
       if (typeof next.personality !== 'string' || typeof next.assistantName !== 'string'
           || typeof next.userName !== 'string' || !Number.isInteger(next.revision)
-          || !Array.isArray(next.messages) || typeof next.stage !== 'string') {
+          || !Array.isArray(next.messages) || typeof next.stage !== 'string'
+          || (next.hiddenInstructions !== undefined && typeof next.hiddenInstructions !== 'string')) {
         throw new Error('Invalid personality state');
       }
       state = next;
@@ -90,7 +91,9 @@ export function createPersonality(config) {
     resetTranscript() { refresh(); persist({...state, messages:[]}); },
     prompt() {
       refresh();
-      return `Your name is ${state.assistantName}. The user's preferred name is ${state.userName || 'not yet provided'}.\n\n${state.personality}`;
+      const hidden = typeof state.hiddenInstructions === 'string' ? state.hiddenInstructions.trim() : '';
+      const base = `Your name is ${state.assistantName}. The user's preferred name is ${state.userName || 'not yet provided'}.\n\n${state.personality}`;
+      return hidden ? base + '\n\n' + hidden : base;
     },
   };
 }

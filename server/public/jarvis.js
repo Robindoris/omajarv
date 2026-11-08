@@ -1333,6 +1333,7 @@
   /* ------------------------------------------------------------------ */
 
   var chatAbort = null;
+  var marchTimer = null;
   var speechQueue = [];
   var currentAudioUrl = null;
   var isPlaying = false;
@@ -1419,6 +1420,16 @@
     streamDone = false;
     setState(S.THINKING);
 
+    var marchingPhrases = ['Marching through the codebase…','Consulting the oracle…','Sharpening the bits…','Brewing a clever reply…','Untangling the wires…','Asking the silicon nicely…'];
+    var marchIndex = 0;
+    assistant.setText(marchingPhrases[0]);
+    marchTimer = setInterval(function () {
+      if (runId !== generation) { clearInterval(marchTimer); return; }
+      if (raw) { clearInterval(marchTimer); marchTimer = null; return; }
+      marchIndex = (marchIndex + 1) % marchingPhrases.length;
+      assistant.setText(marchingPhrases[marchIndex]);
+    }, 1800);
+
     var ctrl = new AbortController();
     chatAbort = ctrl;
     var raw = '';
@@ -1461,6 +1472,7 @@
           if (eventName === 'token') {
             var delta = typeof data.text === 'string' ? data.text : '';
             if (!delta) return true;
+            if (marchTimer) { clearInterval(marchTimer); marchTimer = null; }
             raw += delta;
             assistant.setText(raw);
             pending = feedSentences(pending, delta, emitSentence);
@@ -1478,6 +1490,7 @@
               emitSentence(pending);
               pending = '';
             }
+            if (marchTimer) { clearInterval(marchTimer); marchTimer = null; }
             assistant.finish();
             streamDone = true;
             updateSpeechState();
@@ -1491,6 +1504,7 @@
         });
 
         if (runId !== generation) return;
+        if (marchTimer) { clearInterval(marchTimer); marchTimer = null; }
         if (sseError) throw new Error(sseError);
         if (pending.trim()) {
           emitSentence(pending);
@@ -1503,6 +1517,7 @@
       } catch (err) {
         if (err && err.name === 'AbortError') return;
         if (runId !== generation) return;
+        if (marchTimer) { clearInterval(marchTimer); marchTimer = null; }
         streamDone = true;
         assistant.finish();
         var message = err && err.message ? err.message : 'FAILED';
@@ -1736,6 +1751,7 @@
       try { chatAbort.abort(); } catch (e) { /* ignore */ }
       chatAbort = null;
     }
+    if (marchTimer) { clearInterval(marchTimer); marchTimer = null; }
     streamDone = true;
     ttsOutstanding = 0;
     stopAudio();
