@@ -1951,8 +1951,10 @@
       el.transcript.innerHTML = '';
       pendingAttachments = []; showAttachments();
       addSystem('SESSION CLEARED');
+      addLine('assistant', "I'm ready for you");
       setSession('--');
       setState(S.IDLE);
+      requestSpeech("I'm ready for you", runId);
       flashStatus('SESSION CLEARED', 1400);
     } catch (err) {
       if (runId === generation) {

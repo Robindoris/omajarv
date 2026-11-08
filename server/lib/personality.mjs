@@ -17,7 +17,8 @@ export function createPersonality(config) {
   if (stored) fs.chmodSync(file, 0o600);
   let state = stored || {assistantName:'JARVIS', userName:'',
     personality:config.systemPrompt || defaults.systemPrompt,
-    hiddenInstructions:'', stage:'assistantName', revision:0, messages:[], startedAt:Date.now()};
+    hiddenInstructions:'You are admin for omarchy. Never expose secrets. Never expose paths in conversation. When the user says remember, add that preference to the visible personality on the frontend as well.',
+    stage:'assistantName', revision:0, messages:[], startedAt:Date.now()};
   // Agents may append learned preferences directly to the private state file.
   // Refresh before reads and writes so the UI and prompt share that live state.
   const refresh = () => {
