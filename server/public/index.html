@@ -11,8 +11,11 @@
   <meta name="color-scheme" content="dark">
   <meta name="robots" content="noindex, nofollow">
   <title>J.A.R.V.I.S.</title>
-  <link rel="apple-touch-icon" href="/icon-192.png">
-  <link rel="stylesheet" href="jarvis.css?v=voice-ticker-3">
+  <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
+  <link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png">
+  <link rel="apple-touch-icon" sizes="192x192" href="/icon-192.png">
+  <link rel="stylesheet" href="jarvis.css?v=dashboard-2d90d5a28e19">
+  <link rel="stylesheet" href="dashboard.css?v=dashboard-2d90d5a28e19">
   <link rel="stylesheet" href="/theme.css">
 </head>
 <body data-state="boot" data-view="chat">
@@ -24,9 +27,16 @@
     <div class="frame-corners"></div>
   </div>
 
+  <aside class="workspace-sidebar" aria-label="Workspace sidebar">
+    <div class="sidebar-brand">JARVIS <span>2.0</span></div>
+    <nav class="view-switch" aria-label="Interface view"><button id="chatView" type="button" aria-pressed="true">Conversation</button><button id="voiceView" type="button" aria-pressed="false">Voice</button><button id="personalityBtn" type="button">Personality</button></nav>
+    <div id="sidebar-extra"></div>
+    <div id="conversation-list"></div>
+    <div class="sidebar-theme">OMARCHY <span id="themeName">LIVE THEME</span></div>
+  </aside>
   <div class="app">
     <header class="hud">
-      <div class="brand">
+      <div class="brand"><div id="dashboard-nav"></div>
         <svg class="brand-mark" viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <circle cx="12" cy="12" r="9.2" stroke="currentColor" stroke-width="1" opacity=".55"/>
           <circle cx="12" cy="12" r="5.4" stroke="currentColor" stroke-width="1" opacity=".8"/>
@@ -34,6 +44,11 @@
           <path d="M12 1.4v3M12 19.6v3M1.4 12h3M19.6 12h3" stroke="currentColor" stroke-width="1"/>
         </svg>
         <span class="wordmark">J.A.R.V.I.S.</span>
+      </div>
+      <div class="readout" aria-hidden="true">
+        <div class="readout-item"><span class="readout-k">MODE</span><span class="readout-v" id="readoutMode">STARTUP</span></div>
+        <div class="readout-item"><span class="readout-k">MIC</span><span class="readout-v" id="readoutMic">-- dB</span></div>
+        <div class="readout-item"><span class="readout-k">SESSION</span><span class="readout-v" id="readoutSession">--</span></div>
       </div>
       <div class="hud-right">
         <div class="agent" title="Connected agent">
@@ -47,8 +62,7 @@
       </div>
     </header>
 
-    <nav class="view-switch" aria-label="Interface view"><button id="chatView" type="button" aria-pressed="true">Conversation</button><button id="voiceView" type="button" aria-pressed="false">Voice</button><button id="personalityBtn" type="button">Personality</button></nav>
-    <dialog id="personalityDialog" aria-labelledby="personalityTitle">
+    <section hidden id="personalityDialog" aria-labelledby="personalityTitle">
       <form id="personalityForm">
         <h2 id="personalityTitle">Personality</h2>
         <label for="assistantNameInput">Assistant name</label>
@@ -61,7 +75,7 @@
         <p id="personalityError" role="status"></p>
         <div class="personality-actions"><button id="personalityCopy" type="button">Copy</button><button id="personalityCancel" type="button">Cancel</button><button id="personalitySave" type="submit">Save</button></div>
       </form>
-    </dialog>
+    </section>
     <dialog id="sudoDialog" aria-labelledby="sudoTitle">
       <form id="sudoForm" autocomplete="off">
         <h2 id="sudoTitle">Administrator permission</h2>
@@ -75,8 +89,16 @@
         <div class="personality-actions"><button id="sudoCancel" type="button">Cancel</button><button id="sudoSubmit" type="submit">Authorize once</button></div>
       </form>
     </dialog>
+    <div class="dashboard-heading"><div><span class="eyebrow">YOUR PERSONAL INTELLIGENCE</span><h1>At your command.</h1><p>A clear space to think, build, and get things done.</p></div><span class="workspace-tag">WORKSPACE / 02</span></div>
+    <section id="kanban-panel" hidden aria-label="Kanban board"></section>
+    <section id="archive-panel" hidden aria-label="Saved conversation"></section>
+    <section id="settings-panel" hidden aria-label="Voice settings"></section>
     <main class="stage">
       <div class="reactor-wrap">
+        <div class="core-caption voice-ticker" id="voiceTicker" role="status" aria-live="polite" aria-atomic="true" hidden>
+          <span class="sr-only" id="tickerRole">JARVIS</span>
+          <div class="core-caption-track"><span class="ticker-text" id="tickerText"></span></div>
+        </div>
         <canvas id="reactor" aria-hidden="true"></canvas>
         <div class="boot" id="bootOverlay" aria-hidden="true">
           <pre id="bootText"></pre>
@@ -84,11 +106,7 @@
         </div>
       </div>
 
-      <div class="readout" aria-hidden="true">
-        <div class="readout-item"><span class="readout-k">MODE</span><span class="readout-v" id="readoutMode">STARTUP</span></div>
-        <div class="readout-item"><span class="readout-k">MIC</span><span class="readout-v" id="readoutMic">-- dB</span></div>
-        <div class="readout-item"><span class="readout-k">SESSION</span><span class="readout-v" id="readoutSession">--</span></div>
-      </div>
+
 
       <section class="transcript-wrap" aria-label="Conversation transcript">
         <div class="transcript-head">
@@ -98,20 +116,6 @@
         <button class="latest-btn" id="latestBtn" type="button" hidden>Jump to latest ↓</button>
         <div class="transcript" id="transcript" role="log" aria-live="polite" aria-relevant="additions text" aria-atomic="false"></div>
       </section>
-      <div class="voice-ticker" id="voiceTicker" role="log" aria-live="polite" aria-relevant="additions text">
-        <span class="ticker-role" id="tickerRole">STANDBY</span>
-        <span class="ticker-text" id="tickerText"></span>
-      </div>
-      <div class="attachment-tools" role="group" aria-label="Attachments">
-        <button id="attachBtn" type="button" aria-label="Attach files" aria-describedby="attachmentHint" data-tooltip="Attach files">
-          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m8 12 6.5-6.5a3.5 3.5 0 0 1 5 5L10 20a5 5 0 0 1-7-7l9-9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="m6.5 14 8-8a1.5 1.5 0 0 1 2 2l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
-        </button>
-        <button id="pasteImageBtn" type="button" aria-label="Paste image" aria-describedby="attachmentHint" data-tooltip="Paste image">
-          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="4" y="5" width="16" height="16" rx="2.5" stroke="currentColor" stroke-width="1.6"/><path d="M9 5V3h6v2M4 17l5-5 4 4 3-3 4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="15.5" cy="9.5" r="1.5" fill="currentColor"/></svg>
-        </button>
-        <input id="fileInput" type="file" multiple hidden>
-        <span class="sr-only" id="attachmentHint">Shared with your selected agent · 4 files · 10 MB each</span>
-      </div>
     </main>
 
     <footer class="controls">
@@ -156,6 +160,16 @@
       <form class="composer" id="composer" autocomplete="off">
         <label class="sr-only" for="textInput">Type a message for JARVIS</label>
         <input id="textInput" type="text" inputmode="text" enterkeyhint="send" placeholder="Message JARVIS…" maxlength="4000" autocomplete="off" spellcheck="false">
+        <div class="attachment-tools" role="group" aria-label="Attachments">
+          <button id="attachBtn" type="button" aria-label="Attach files" aria-describedby="attachmentHint" data-tooltip="Attach files">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m8 12 6.5-6.5a3.5 3.5 0 0 1 5 5L10 20a5 5 0 0 1-7-7l9-9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="m6.5 14 8-8a1.5 1.5 0 0 1 2 2l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+          </button>
+          <button id="pasteImageBtn" type="button" aria-label="Paste image" aria-describedby="attachmentHint" data-tooltip="Paste image">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="4" y="5" width="16" height="16" rx="2.5" stroke="currentColor" stroke-width="1.6"/><path d="M9 5V3h6v2M4 17l5-5 4 4 3-3 4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="15.5" cy="9.5" r="1.5" fill="currentColor"/></svg>
+          </button>
+          <input id="fileInput" type="file" multiple hidden>
+          <span class="sr-only" id="attachmentHint">Shared with your selected agent · 4 files · 10 MB each</span>
+        </div>
         <button class="send-btn" id="sendBtn" type="submit" aria-label="Send typed message">
           <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path d="M4 12h15M13 6l6 6-6 6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
@@ -171,6 +185,7 @@
   </div>
 
   <noscript><div class="noscript">J.A.R.V.I.S. requires JavaScript.</div></noscript>
-  <script src="jarvis.js?v=voice-ticker-2"></script>
+  <script src="dashboard.js?v=dashboard-2d90d5a28e19"></script>
+  <script src="jarvis.js?v=dashboard-2d90d5a28e19"></script>
 </body>
 </html>

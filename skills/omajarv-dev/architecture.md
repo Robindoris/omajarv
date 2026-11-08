@@ -1,8 +1,22 @@
 # Architecture and source map
 
-Repo: https://github.com/Robindoris/omajarv . Source is plain QML, shell and Node.js
-ES modules; there is no npm build step or application dependency install. Node 22+
+This guide includes JARVIS 2.0 behavior for checkouts with `frontend/src`. For
+version-one branches without that directory, verify their own handlers and docs
+before applying dashboard build or archive semantics.
+
+Repo: https://github.com/Robindoris/omajarv . Source uses QML, shell and Node.js ES modules, plus a React dashboard built with
+Tailwind and Three.js. Install dependencies once with `npm ci`; run `npm run build:frontend` after editing
+`frontend/src`; generated assets in `server/public` are committed so runtime
+installation needs no npm dependencies. Node 22+
 is required. Read README.md, PRIVACY.md and SECURITY.md for current user behavior.
+
+Workspace pages use React portals into sections in `server/public/index.html`.
+Register a new section in `window.jarvisWorkspace` in `server/public/jarvis.js`,
+including hidden-state routing, and hide conversation controls for that workspace
+in `frontend/src/dashboard.css`. Keep API requests behind `window.jarvisAPI` so
+authentication stays in headers rather than URLs. Browser tests use virtual time;
+advance a fresh budget after interacting with async forms before asserting API
+results, because an expired budget pauses fetch completion and rendering.
 
 | Area | Files |
 | --- | --- |
@@ -28,8 +42,8 @@ is required. Read README.md, PRIVACY.md and SECURITY.md for current user behavio
 Both interfaces call the same authenticated API. POST /api/chat streams SSE meta,
 token, done and error events. GET /api/history synchronizes saved conversations
 while clients are idle. POST /api/chat/stop aborts the active agent request.
-POST /api/session/reset clears shared history, remembered agent sessions and uploads;
-it preserves names and the personality prompt.
+POST /api/session/reset archives active transcripts and clears remembered agent
+sessions/uploads; it preserves saved chats, names and the personality prompt.
 Only one agent request is active at a time; reset/concurrent requests must respect it.
 Check docs/API.md and the route handler before changing the protocol.
 
@@ -39,7 +53,7 @@ use events/states consistently in Panel.qml. Errors must release busy states.
 The helper uses authenticated loopback HTTPS and trusts the local certificate.
 
 Agent resolution follows config.agent or Omarchy's defaults/agent file. Code adapters
-normalize CLI output. Session IDs and the last 100 transcript messages per agent
+normalize CLI output. Session IDs, active transcripts and archived conversations
 persist separately. Do not assume every adapter supports resume, streaming or
 permission flags identically; inspect the installed CLI when changing an adapter.
 
@@ -50,3 +64,12 @@ agent conversation or make a second backend.
 Personality, attachments and model selection share the same desktop/phone backend;
 see [conversation.md](conversation.md). Phone sudo uses a separate encrypted
 approval channel; see [voice-security.md](voice-security.md).
+
+The browser Kanban lives in `frontend/src/kanban-board.jsx`; `server/lib/kanban.mjs`
+owns schema migration, revision/idempotency checks, recurrence, host-local dates and
+private snapshots. `kanban-runner.mjs` serializes explicit queue entries with the
+shared agent lock in `jarvis-server.mjs`. Restarted work is interrupted, never
+automatically replayed. `kanban-cli.mjs` uses the private authenticated Unix socket.
+
+See [dashboard-v2.md](dashboard-v2.md) for the current build/test loop and
+[api-v2.md](api-v2.md) for the complete API map and feature contracts.

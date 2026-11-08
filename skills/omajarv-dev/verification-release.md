@@ -5,8 +5,12 @@ a documentation or color-only edit does not automatically require the full suite
 
 | Change | Useful checks |
 | --- | --- |
+| JARVIS 2.0 UI/build/contracts | read [dashboard-v2.md](dashboard-v2.md) and [api-v2.md](api-v2.md); rebuild generated assets after source/loading changes |
+| Kanban storage/dates/recurrence/restore | node tests/kanban.mjs |
+| Kanban queue/concurrency/CLI/adapter/icons | node tests/kanban-runner.mjs; node tests/kanban-bridge.mjs |
+| Voice settings | node tests/voice-settings-unit.mjs; node tests/voice-settings.mjs |
 | Native panel | omarchy plugin validate .; validate nested/installed plugin as appropriate; qmlformat parsing; live runtime logs/layout when deployed |
-| Model discovery/download setup | node tests/onboarding.mjs |
+| Model discovery/download setup | node tests/onboarding.mjs; node tests/voice-setup.mjs |
 | Installer/removal/defaults | node tests/install.mjs |
 | Agent/API/auth/history/stop/QR | node tests/integration.mjs |
 | Personality/live memory | node tests/personality.mjs; node tests/integration.mjs |

@@ -9,10 +9,12 @@ JARVIS icons. Personal configuration and credentials are not distributed.
 Microphone recordings are captured only after the user activates recording. Whisper
 transcribes recordings locally and Piper generates speech locally. Temporary audio
 is removed after processing. Closing the desktop panel during recording cancels it.
-Shared transcripts (last 100 messages per agent), agent session IDs, the access token,
+Shared transcripts and saved conversations, agent session IDs, the access token,
 and the HTTPS private key live under `~/.local/state/omarchy-jarvis/`, outside the
 plugin source. Private directories use mode 0700; sensitive files use 0600.
-Transcripts are saved locally; New conversation clears them and agent session IDs.
+Transcripts are saved locally. New conversation archives the current transcript for
+the sidebar history and clears active agent session IDs. Saved conversations remain
+on this computer in `conversations.json`; starting a new chat does not erase them.
 The browser remembers its bearer token in session storage and its installed app
 start URL. Treat the browser profile, access link, QR, and screenshots as credentials.
 
@@ -54,7 +56,7 @@ Agent CLI/provider storage and logs remain under those tools' own policies. Ther
 claim that the process is sandboxed by JARVIS. Omarchy plugins themselves run with
 your user permissions. Review the source and the configured agent before use.
 
-The service worker caches only theme CSS for offline colors. It does not cache API
+The service worker caches palette CSS and public app icons for offline availability. It does not cache API
 responses or conversation pages. Offline speech and responses require a running
 computer; optional phone networking services must also remain connected.
 
@@ -66,3 +68,17 @@ shutdown, and abandoned upload directories are removed after 24 hours on next st
 The transcript retains filenames; agent providers may have separate retention.
 Each file is limited to 10 MiB, each message to four files, and local upload storage
 to 100 MiB and 100 files. No thumbnails or active document content are rendered.
+
+Kanban task data and the last 20 recovery snapshots stay in private files on the
+bridge host. Exported backups include task titles and notes. Restoring a backup
+does not undo actions already taken by an agent or restart an unfinished run.
+
+
+Optional IP cameras: explicitly saved RTSP camera addresses (including credentials,
+when supplied) remain in the private bridge config. The browser receives only
+configuration flags and authenticated same-origin JPEG/PCM streams, never the saved
+address. FFmpeg processes connect to the camera on the local network only while a
+test or recording is requested. Preview video is not sent to the AI; audio recorded
+with push-to-talk follows the existing local transcription/selected-agent flow.
+Stream diagnostics are suppressed and no camera media files are retained by the
+bridge. Local administrators can inspect process arguments, including the RTSP input.

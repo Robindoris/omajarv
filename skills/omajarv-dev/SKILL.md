@@ -3,22 +3,24 @@ name: omajarv-dev
 description: >
   Develop, debug, test, package, or maintain omajarv, the Omarchy JARVIS assistant
   at github.com/Robindoris/omajarv (plugin h3man.jarvis, command jarvis).
-  Use for its native QML assistant, phone QR/web UI, speech models, agent bridge,
+  Use for its native QML assistant and JARVIS 2.0 React/Tailwind/Three.js dashboard,
+  Kanban/API development, phone QR/web UI, speech models, agent bridge,
   onboarding, personality memory, attachments, phone sudo approval, networking,
   theme sync, and repository releases. Excludes general
   Omarchy customization and unrelated projects named Jarvis.
 ---
 
-# omajarv development
+# omajarv / JARVIS 2.0 development
 
-Maintain the existing desktop and phone assistant. Preserve its Omarchy integration,
+Develop the native desktop assistant and JARVIS 2.0 web dashboard. Preserve its Omarchy integration,
 shared conversations, opt-in local speech, and privacy boundaries. This skill is
 available across local agents; it does not depend on a particular coding model.
 
 ## Start with the right checkout
 
-Use the current checkout when its origin is `Robindoris/omajarv`. Otherwise read
-[local.md](local.md) to find this machine's source and running service. Inspect
+Use the current checkout when its origin is `Robindoris/omajarv`. Otherwise inspect available local machine guidance to locate the intended source
+and running service. The installed shared skill may include `local.md`; the portable
+repository bundle intentionally does not. Inspect
 `git status`, the remote, and the relevant code before editing. Several local copies
 can exist; do not silently replace one with another or discard local changes.
 
@@ -30,13 +32,14 @@ explicitly includes migration. Read the repo's `AGENTS.md` when present.
 
 Read the guide relevant to the change, rather than every guide:
 
+- [dashboard-v2.md](dashboard-v2.md): JARVIS 2.0 source ownership, efficient builds, interaction/theme contracts and targeted tests.
+- [api-v2.md](api-v2.md): complete route map, new voice/board/history APIs, extension patterns, concurrency and recovery.
 - [architecture.md](architecture.md): source map, API/desktop protocol, state and sessions.
 - [conversation.md](conversation.md): personality/live memory, file uploads, clipboard images and agent models.
 - [desktop.md](desktop.md): bar icon, native Assistant/Phone panel, activity UI, deployment.
 - [phone.md](phone.md): QR, Cloudflare/LAN/Tailscale, browser UI and Omarchy theme sync.
 - [voice-security.md](voice-security.md): local models, onboarding, credentials, encrypted phone sudo and agent permissions.
 - [verification-release.md](verification-release.md): targeted tests, source packaging, publication.
-- [local.md](local.md): machine-specific checkout locations and cross-agent discovery.
 
 When changing actual desktop config, use the installed Omarchy skill if available.
 Its Hyprland syntax and theme/plugin conventions remain authoritative for this
@@ -47,6 +50,7 @@ machine. Do not edit packaged Omarchy files under `/usr/share/omarchy/`.
 - Assistant and Phone are the two top-level panel tabs. Cloudflare, LAN and Tailscale
   are connection choices inside Phone. Native and phone chat share the bridge's
   JARVIS session/history; they do not attach to arbitrary terminal agent sessions.
+- JARVIS 2.0 adds sidebar workspace pages without replacing the native Assistant/Phone tabs. For a checkout containing `frontend/src`, read the v2 guide before assuming version-one build or reset behavior.
 - Use actual events for activity labels. Waiting, receiving text, transcription,
   generating speech and playing speech are different states. Do not invent progress
   percentages or claim tool execution that the adapter has not reported.

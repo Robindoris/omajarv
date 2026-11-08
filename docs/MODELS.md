@@ -2,7 +2,7 @@
 
 `jarvis setup` opens the installer; `jarvis models` reruns just model selection.
 The Assistant tab shows Open setup if configuration or voice models are missing.
-Text chat works without speech models. No download starts without an explicit yes.
+Text chat works without speech models. No download starts without explicit consent in the installer or Settings.
 
 Discovery checks the configured model paths and bounded common Whisper/Piper model
 folders. It never searches the whole home directory. A found model can be reused in
@@ -29,3 +29,20 @@ Sources and terms:
 Whisper/Piper binaries must be installed separately; setup offers missing packages
 through the system package manager. Piper may require an AUR package and its own
 license terms. Downloaded files and package-manager builds remain external trust.
+
+## Dashboard setup
+
+Settings contains a three-step guide: personalize JARVIS, select or download local
+models, then check speech tools and microphone access. **Download missing models**
+is explicit consent to fetch the pinned default Whisper/Piper files listed above.
+Existing configured models are kept; discovered local models are reused before
+network downloads. **Use installed models** applies those choices without network
+access. You can skip voice and continue with text.
+
+The bridge exposes authenticated `GET /api/voice-setup` for model/runtime readiness
+and actual byte progress. `POST /api/voice-setup` with `{ "consent": true }` starts
+one background setup job. Arbitrary URLs or model names cannot be supplied. Failed
+downloads can be retried; configuration changes only after all required files are
+verified. Settings edits are blocked during installation. No package-manager or
+administrator command runs from this button: missing Whisper, Piper or FFmpeg
+binaries are listed separately for installation on the computer.

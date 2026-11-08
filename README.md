@@ -331,3 +331,87 @@ See the [publication review](docs/RELEASE-REVIEW.md) for the tested boundaries.
 
 [MIT](LICENSE) for omajarv source. Speech runtimes, coding agents and downloaded
 models retain their own terms; this repository does not redistribute model weights.
+
+### JARVIS 2.0 dashboard development
+
+The bridge now serves a responsive dashboard with a Three.js core, live voice
+activity, and a vertical sidebar with Conversation, Voice, Personality and Kanban
+pages. The sidebar collapses behind the panel button on smaller screens. Saved
+conversations appear below navigation; New conversation archives the active chat. Tasks persist privately on the bridge
+and refresh across visible board views every two seconds. Add, edit, move or delete
+tasks, or choose **Run task** to queue work with the shared JARVIS agent.
+
+The dashboard uses React, Tailwind CSS and locally owned shadcn/ui Button
+and Radix Sheet components in `frontend/src/components/ui`. Existing authenticated
+voice, streaming chat, attachments, personality and encrypted sudo flows remain
+in `server/public/jarvis.js`. No runtime CDN or external asset requests are needed.
+
+To rebuild after editing `frontend/src/`, run `npm ci` then
+`npm run build:frontend`. Commit the generated `server/public/dashboard.js` and
+`dashboard.css` with the sources; installed bridges need no npm install.
+Run `node tests/kanban.mjs`, `node tests/integration.mjs` and
+`node tests/theme-browser.mjs` for backend and mobile regression coverage.
+
+The authenticated `GET /api/kanban` returns `{revision,tasks}`. JSON
+`POST /api/kanban` accepts `{revision,action:"create",title}`,
+`{revision,action:"move",id,status}` or `{revision,action:"delete",id}`.
+Statuses are `todo`, `doing`, and `done`. Stale writes return HTTP 409.
+
+JARVIS receives instructions for the local `jarvis board` tool on every agent
+request. The tool supports `list`, `add TITLE`, `move ID todo|doing|done`, and
+`delete ID`, using the authenticated bridge API over its private Unix socket. Credentials never enter the agent prompt. The agent must have
+terminal tool access to use the local board tool. Explicitly queued tasks run
+when the shared conversation becomes idle; unqueued tasks never start themselves.
+
+Tailwind semantic color tokens map to the bridge’s Omarchy palette. Visible clients
+refresh the palette every two seconds, including sidebar, forms and Three.js colors.
+
+Settings → Voice setup now includes guided onboarding and a **Download missing
+models** button. It reuses installed files first, otherwise fetches and verifies
+the pinned English Whisper/Piper models after an explicit click. The guide shows
+real download progress, missing speech binaries, and an optional microphone check.
+No package installation or model download happens merely by opening Settings.
+
+Kanban tools use the private bridge socket in both HTTPS and explicit HTTP dev
+mode. Run `node tests/kanban-bridge.mjs` for the agent-tool regression and
+`node tests/voice-setup.mjs` for consent/progress/retry coverage without model downloads.
+
+The Kanban board supports notes, priorities, host-local due dates, recurring tasks,
+title/notes search and filters, touch dragging and keyboard column moves. Focus a
+card and press Enter to edit, ↑/↓ to navigate, or Alt+←/→ to move. On its drag grip,
+Space picks up/drops, ←/→ selects a column, and Escape cancels. Mobile columns can
+be swiped or selected using the column buttons; card controls use 44px touch targets.
+
+**Run task** explicitly queues work for the selected agent. Queued, Running,
+Completed, Failed and Interrupted are separate from the three board columns.
+Failed/interrupted work requires a deliberate retry. The backend serializes runs
+with shared chat, rejects duplicate starts and retains request IDs to safely retry
+lost responses. An agent turn that exits successfully moves its task to Done.
+
+**Back up** downloads a snapshot; **Saved backups** offers the last 20 private
+pre-change snapshots. Restore previews the backup and requires confirmation. It
+preserves a recovery snapshot and never restarts unfinished restored work.
+Recurring completion creates one new Next up occurrence; it does not run it.
+The web app now declares PNG favicons and caches public install icons for offline
+availability without caching private pages or API responses.
+
+
+### Optional IP camera microphone
+
+In sidebar **Settings → IP camera and optional microphone**, follow the guide to
+save an RTSP camera on the computer’s trusted LAN. Enable RTSP and audio in the
+camera’s app first. Test video and camera audio independently, then select
+**Camera microphone** for voice recording on a computer with no microphone.
+Voice capture starts only when you press Record; stream tests start explicitly. It does not use the browser’s
+microphone permission. Device microphone remains the default. Whisper is still
+required for transcription. Use **Forget camera** to remove its private settings.
+Video is a preview only and is never sent to the AI. Supported cameras expose RTSP
+on a private IPv4 address; cloud-only and HTTP-only cameras are not supported.
+
+See [camera setup and troubleshooting](docs/IP-CAMERA.md) for requirements and limitations.
+
+Voice opens by default on fresh page loads when both speech recognition and speech
+playback report ready. Missing models or runtimes keep text as the default. Setup
+completion updates the default without closing Settings. Explicit chat/voice choices
+remain selected for that page session; readiness checks never open a microphone or
+start recording.

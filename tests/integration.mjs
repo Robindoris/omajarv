@@ -66,10 +66,10 @@ const req=https.request({hostname:'127.0.0.1',servername:'localhost',port,path:e
 try {
 for(let i=0;i<100&&!logs.includes('listening on');i++)await new Promise(r=>setTimeout(r,50));
 assert.match(logs,/listening on/);
-for(const endpoint of ['/api/status','/api/theme','/api/health','/api/personality','/api/history','/api/sudo/pending','/api/models']){
+for(const endpoint of ['/api/kanban','/api/status','/api/theme','/api/health','/api/personality','/api/history','/api/sudo/pending','/api/models']){
  assert.equal((await api(endpoint,undefined,false)).status,401,endpoint);
 }
-for(const endpoint of ['/api/attachments?name=test.txt','/api/attachments/remove','/api/chat','/api/chat/stop','/api/session/reset','/api/personality','/api/stt','/api/tts','/api/sudo/reply','/api/agent/model']){
+for(const endpoint of ['/api/kanban','/api/attachments?name=test.txt','/api/attachments/remove','/api/chat','/api/chat/stop','/api/session/reset','/api/personality','/api/stt','/api/tts','/api/sudo/reply','/api/agent/model']){
  assert.equal((await api(endpoint,{},false)).status,401,endpoint);
 }
 const privateHeaders=(await api('/api/history')).headers;
@@ -79,6 +79,16 @@ assert.match(privateHeaders['content-security-policy'],/connect-src 'self'/);
 assert.match(privateHeaders['content-security-policy'],/frame-ancestors 'none'/);
 assert.equal((await api('/api/history',undefined,false)).status,401);
 assert.equal((await api('/api/sudo/pending',undefined,false)).status,401);
+const emptyBoard=JSON.parse((await api('/api/kanban')).text);
+assert.equal(emptyBoard.tasks.length,0);
+const tool=spawnSync(process.execPath,[path.join(root,'server/kanban-cli.mjs'),'list'],{env,encoding:'utf8',timeout:15000});
+assert.equal(tool.status,0,tool.stderr);
+assert.deepEqual(JSON.parse(tool.stdout),emptyBoard);
+const createdTask=await api('/api/kanban',{action:'create',title:'Fixture task',revision:0});
+assert.equal(createdTask.status,200);
+assert.equal((await api('/api/kanban',{action:'create',title:'Stale task',revision:0})).status,409);
+const taskBoard=JSON.parse(createdTask.text);
+assert.equal((await api('/api/kanban',{action:'move',id:taskBoard.tasks[0].id,status:'doing',revision:1})).status,200);
 assert.equal((await api('/api/sudo/reply',{id:'fake',ciphertext:'fake'},false)).status,401);
 assert.equal((await api('/api/sudo/reply',{id:'fake',password:'never accepted'})).status,409);
 assert.equal((await api('/',undefined,false)).status,401);
@@ -129,6 +139,7 @@ assert.equal(fs.statSync(path.join(state,'personality.json')).mode & 0o777,0o600
 assert.equal((await api('/api/personality',{...profile,personality:''})).status,400);
 assert.equal((await api('/api/personality',{...profile,revision:0})).status,409);
 await api('/api/session/reset',{});
+
 assert.deepEqual(JSON.parse((await api('/api/history')).text).messages,[]);
 const reply=await api('/api/chat',{text:'hello'});
 assert.match(reply.text,/Hello from the test agent/);
@@ -185,6 +196,13 @@ const disposable=JSON.parse((await api('/api/attachments?name=remove.txt',Buffer
 assert.equal((await api('/api/attachments/remove',{id:disposable.id})).status,200);
 assert.equal((await api('/api/chat',{attachments:[disposable.id]})).status,400);
 await api('/api/session/reset',{});
+const savedChats=JSON.parse((await api('/api/conversations')).text).conversations;
+assert.ok(savedChats.some(chat=>!chat.active),'Starting a new chat must preserve old conversations');
+const oldChat=JSON.parse((await api('/api/conversations?id='+encodeURIComponent(savedChats.find(chat=>!chat.active).id))).text);
+assert.ok(oldChat.messages.length>0);
+assert.equal(fs.statSync(path.join(state,'conversations.json')).mode & 0o777,0o600);
+assert.equal((await api('/api/conversations',undefined,false)).status,401);
+
 assert.equal(fs.existsSync(metadata[0].path),false);
 assert.equal((await api('/api/chat',{attachments:[uploaded.id]})).status,400);
 async function desktopAction(action) {

@@ -18,7 +18,7 @@ the `X-Jarvis-Token` header. The phone opens the explicit QR access link. Bare h
   "tunnel": { "enabled": true, "provider": "cloudflare", "state": "up",
               "url": "https://random-words.trycloudflare.com", "restarts": 0 },
   "agent": { "id": "codex", "label": "Codex", "ready": true },
-  "stt": { "ready": true, "model": "base.en", "engine": "whisper-server" },
+  "stt": { "ready": true, "model": "base.en", "engine": "whisper-cli" },
   "tts": { "ready": true, "voice": "en_US-lessac-medium" },
   "session": { "id": "…", "turns": 3 },
   "limits": { "maxRecordingSec": 120, "maxTextChars": 4000 }
@@ -95,6 +95,67 @@ to the next request (`--model` for OpenCode), and is reflected in `agent.model`
 plus `agent.modelSelectable` in `GET /api/status`. The response is the refreshed
 `GET /api/models` payload.
 
+## `GET /api/voice-settings` and `POST /api/voice-settings`
+
+Authenticated and uncached. GET and successful POST return exactly these three
+sections (example paths are illustrative; discovery returns local installed files):
+
+```json
+{
+  "settings": {
+    "stt": { "engine": "auto", "model": "base.en", "modelPath": "", "language": "en", "serverPort": 8178 },
+    "tts": { "voice": "en_US-ljspeech-medium", "modelPath": "", "speed": 1 },
+    "maxRecordingSec": 120
+  },
+  "models": {
+    "whisper": [{ "name": "base.en", "path": "/example/models/ggml-base.en.bin" }],
+    "piper": [{ "name": "en_US-ljspeech-medium", "path": "/example/models/en_US-ljspeech-medium.onnx" }]
+  },
+  "status": {
+    "stt": { "ready": true, "model": "base.en", "engine": "whisper-cli", "modelPath": "/example/models/ggml-base.en.bin" },
+    "tts": { "ready": true, "voice": "en_US-ljspeech-medium", "engine": "piper", "modelPath": "/example/models/en_US-ljspeech-medium.onnx" }
+  }
+}
+```
+
+POST accepts `{ "settings": { ... } }` or a direct settings object; either may
+contain a partial update of the editable fields shown above. Unknown fields,
+invalid types, malformed JSON, non-JSON content types and cross-site browser
+submissions return HTTP 400 with `{ "error": "..." }`. Empty settings objects are
+rejected. POST requires `Content-Type: application/json`.
+
+Validation:
+
+- `stt.engine`: `auto | cli | server`. **All currently use local whisper-cli**;
+  `server` and `serverPort` are retained compatibility settings, not permission
+  to start or contact an unauthenticated Whisper HTTP listener. Consult
+  `status.stt.engine` for the actual runtime, including `missing`.
+- `stt.model` and `tts.voice`: 1–100 ASCII letters, digits, `_`, `.`, `-`,
+  starting with a letter/digit, with no `..`.
+- `stt.language`: a supported lowercase Whisper language code (for example `en`,
+  `sk`, `de`, `zh`) or `auto`.
+- `stt.serverPort`: integer 1–65535.
+- `stt.modelPath` and `tts.modelPath`: empty, or a local absolute/`~/` path of
+  at most 4096 characters with no control characters. Explicit paths must name
+  an existing nonempty `.bin` Whisper model or `.onnx` Piper model; Piper also
+  requires a nonempty matching `.onnx.json` file. Paths are reused in place.
+- `maxRecordingSec`: integer 1–600 seconds. `tts.speed`: number 0.5–2 inclusive.
+
+Discovery uses the configured paths and bounded existing common model folders;
+Piper discoveries require the matching JSON file. Choosing a discovery should
+send both its `name` and `path` as the model/voice and modelPath. An empty
+modelPath uses the conventional JARVIS model directory with the selected name.
+A name without an installed model may be saved; status reports readiness and
+text chat remains available. No endpoint here downloads, installs or copies models.
+
+The server validates the whole patch before writing a private atomic config file,
+preserves unrelated settings, then applies it to subsequent requests without a
+restart. STT changes invalidate any Whisper worker; TTS-only changes do not.
+An active chat or STT/TTS request (including an uploading recording) returns 409;
+retry after stopping/waiting. Persistence failures also return a sanitized 409
+and leave runtime unchanged. Responses expose only voice configuration, model
+paths and speech statuses, never the full config, tokens or provider credentials.
+
 ## `POST /api/stt`
 
 Raw audio body (`Content-Type: audio/webm`, `audio/ogg`, `audio/wav` or
@@ -135,7 +196,15 @@ Non-2xx returns JSON `{ "ok": false, "error": "…" }`.
 
 ## `POST /api/session/reset`
 
-Clears the agent conversation for the next `/api/chat`. Returns `{ "ok": true }`.
+Archives the current transcript and clears active agent sessions for the next
+`/api/chat`. Saved conversations remain available. Returns `{ "ok": true }`.
+
+## `GET /api/conversations`
+
+Authenticated. Returns `{conversations:[{id,agent,title,at,count,active?}]}` across
+stored agents and archived chats. Add `?id=...` to retrieve a single conversation
+including its `messages`. Existing history is retained; messages discarded by
+older versions cannot be recovered.
 
 ## `GET /`
 
@@ -154,3 +223,89 @@ for an unsent upload. `POST /api/chat` accepts optional `attachments: [id, ...]`
 (up to four distinct IDs); text may be empty when files are attached. Unknown or
 expired IDs are rejected. Files are never served through an HTTP download route.
 New conversation clears files; temporary uploads also expire or clear on restart.
+
+## Voice model setup
+
+Authenticated `GET /api/voice-setup` returns `job` (`idle`, `downloading`, `complete`,
+`error`), byte counts, the current filename, missing model families, fixed download
+metadata, and local runtime readiness. Reads never initiate network downloads.
+Same-site JSON `POST /api/voice-setup` accepts only `{ "consent": true }`, starts a
+background job, and returns HTTP 202. Concurrent setup or active speech/chat returns
+409. Only the pinned catalog from `server/setup.mjs` is downloadable. Existing models
+are reused. Poll GET for progress and completion; failed jobs may be retried.
+
+## Kanban board, execution and recovery
+
+`GET /api/kanban` returns `revision`, `tasks`, `hostDate` (host-local YYYY-MM-DD)
+and `timeZone`. Existing `todo`, `doing`, `done` values map to Next up, In progress,
+Done. Each task also has notes (8,000 characters), priority (low/normal/high/urgent),
+a date-only dueDate, recurrence `{frequency: none|daily|weekly|monthly, interval}`,
+and execution (`idle`, `queued`, `running`, `completed`, `failed`, `interrupted`).
+
+Authenticated same-site JSON `POST /api/kanban` mutations require the current
+revision. A client-generated `requestId` makes a retried request idempotent across
+server restarts (the latest 100 request IDs are retained). Reusing an ID for a
+changed payload returns 409. Actions: create, edit, move, delete, queue, cancel,
+restore, advance. Queue creates a unique run ID. Queued/running tasks cannot be
+edited, moved, deleted or queued twice. `advance` completes the specified task and
+queues the first idle task in Next up, if present.
+
+`POST /api/kanban/stop` with `{id}` aborts the actual running agent. A stopped run
+becomes Interrupted only after the adapter releases it. Board execution shares the
+chat/speech lock, agent session and authenticated bridge history. A successful agent
+turn marks its task Done; failures remain actionable and are never automatically
+retried. Restarted queued/running work becomes Interrupted for review. The runner
+starts explicitly queued tasks, not every task merely sitting in Next up.
+
+Completing a recurring task creates one next occurrence in Next up. Calendar
+arithmetic uses host-local dates (month ends are clamped); repeating the same
+completion cannot duplicate an occurrence. Priorities and recurrence are copied,
+execution/errors/attempts are reset. Model/tool side effects themselves cannot be
+rolled back by restoring a board backup.
+
+`GET /api/kanban/backup` exports a coherent `{format:"jarvis-kanban",version:1,
+createdAt,revision,tasks}` snapshot. `GET /api/kanban/backups` lists the latest 20
+private pre-change snapshots; add `?revision=N` to the backup endpoint to fetch one.
+Restore is a normal revision-checked mutation with `action:"restore", backup,
+confirm:true`. It saves the current board first, validates the complete import,
+increments the live revision, and converts imported unfinished work to Interrupted.
+Active/queued work must be stopped before restore. Imports are limited to 8 MiB and
+200 tasks. Exported files contain titles/notes; they contain no bridge credentials.
+
+
+## Optional IP camera bridge
+
+All camera routes require the normal bridge authentication header. Camera credentials
+are accepted only in same-site JSON and stored using the private atomic config writer.
+They are never returned by settings/status, embedded in browser media URLs, or included
+in errors. GET `/api/ip-camera` returns `{configured,enabled,source,active}` only.
+POST `/api/ip-camera` accepts `{url?,enabled?,source?,forget?}`. `source` is `device`
+or `camera`; an empty URL preserves the saved value and `{forget:true}` removes it
+and restores the device microphone. Settings cannot change while streams are active.
+
+GET `/api/ip-camera/video` produces concatenated JPEG frames (640px wide, 8fps);
+GET `/api/ip-camera/audio` produces little-endian signed 16-bit mono PCM at 48kHz.
+Use authenticated streaming fetch, never a credential-bearing image/audio URL.
+The browser JPEG parser and Web Audio bridge consume these formats. Video previews
+are not sent to an agent; only explicit push-to-talk recordings follow the existing
+speech-to-text flow. Tests are local preview/listening, not transcription requests.
+
+Only RTSP with literal RFC1918 LAN IPv4 addresses is supported in this version.
+Enable RTSP/audio in the camera first. Hostnames, public addresses, loopback,
+HTTP/MJPEG-only cameras and cloud-only cameras are not supported. FFmpeg is required;
+no model or package downloads occur when opening camera settings. RTSP uses TCP
+and an eight-second network timeout. Missing credentials, audio/video tracks or
+FFmpeg produce a sanitized stream error. Streams have a 12-second startup deadline,
+a three-process global cap and fixed lifetimes (video: 60 seconds; audio: recording
+limit plus 10 seconds, bounded to 30–610 seconds). Disconnect/shutdown sends SIGTERM
+and escalates to SIGKILL after one second if needed. No recordings are saved by the
+camera bridge. The browser stops preview tests after 30 seconds/video or 10 seconds/audio,
+and cleans up fetches, audio contexts and image URLs when leaving Settings.
+
+Verification: `node tests/ip-camera.mjs`, `node tests/camera-media.mjs`,
+`node tests/voice-settings.mjs`, `npm run build:frontend` and
+`node tests/theme-browser.mjs` cover synthetic streams and isolated runtime state.
+Browser checks include save/forget, JPEG preview, audio playback, camera-only
+push-to-talk, cancellation, disconnection and stream-test failure recovery at
+1280px, 390px and 320px. Cancelled/disconnected recordings are never uploaded.
+A real camera still needs its own address/credentials and both stream test buttons.

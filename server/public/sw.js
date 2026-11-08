@@ -1,10 +1,14 @@
-// Cache palette CSS only; never cache access links, APIs, or conversations.
+// Cache palette CSS and public app icons only; never cache credentials, APIs or chats.
 const THEME_CACHE = 'jarvis-theme-v1';
-self.addEventListener('install', () => self.skipWaiting());
+const ICON_CACHE = 'jarvis-icons-v1';
+const ICONS = ['/icon-192.png','/icon-512.png','/favicon.ico'];
+self.addEventListener('install', event => {self.skipWaiting();event.waitUntil(caches.open(ICON_CACHE).then(cache=>cache.addAll(ICONS)).catch(()=>{}));});
 self.addEventListener('activate', event => event.waitUntil(self.clients.claim()));
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
-  if (url.origin === self.location.origin && url.pathname === '/theme.css') {
+  if(url.origin===self.location.origin && ICONS.includes(url.pathname) && event.request.method==='GET') {
+    event.respondWith((async()=>{const cache=await caches.open(ICON_CACHE);const saved=await cache.match(url.pathname);if(saved)return saved;const response=await fetch(event.request);if(response.ok)await cache.put(url.pathname,response.clone());return response;})());
+  } else if (url.origin === self.location.origin && url.pathname === '/theme.css') {
     event.respondWith((async () => {
       const cache = await caches.open(THEME_CACHE);
       try {

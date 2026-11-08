@@ -18,11 +18,11 @@ export const downloads = {
     {file:'MODEL_CARD',bytes:517,sha:'fbee1529c89d36b3fe76d7e9f3f832dce17f44900a52d76a9bda735654766b4d'},
   ].map(item => ({...item, url:`https://huggingface.co/rhasspy/piper-voices/resolve/${piperRev}/en/en_US/ljspeech/medium/${item.file}`})),
 };
-export async function downloadVerified(item, destination, { fetcher = fetch } = {}) {
+export async function downloadVerified(item, destination, { fetcher = fetch, onProgress, quiet = false } = {}) {
   fs.mkdirSync(path.dirname(destination), { recursive: true, mode: 0o700 });
   if (usable(destination)) {
     const hash = crypto.createHash('sha256').update(fs.readFileSync(destination)).digest('hex');
-    if (hash === item.sha) return;
+    if (hash === item.sha) { onProgress?.(item.bytes); return; }
   }
   const temporary = destination + '.part';
   const response = await fetcher(item.url, { signal: AbortSignal.timeout(600000) });
@@ -35,11 +35,12 @@ export async function downloadVerified(item, destination, { fetcher = fetch } = 
       bytes += chunk.length;
       if (bytes > item.bytes) throw new Error('Download exceeded expected size');
       fs.writeSync(handle, chunk); hash.update(chunk);
+      onProgress?.(bytes);
       const progress = Math.floor(bytes / item.bytes * 10);
-      if (progress !== lastProgress) { process.stdout.write(`\r  ${item.file}: ${Math.floor(bytes / item.bytes * 100)}%`); lastProgress = progress; }
+      if (!quiet && progress !== lastProgress) { process.stdout.write(`\r  ${item.file}: ${Math.floor(bytes / item.bytes * 100)}%`); lastProgress = progress; }
     }
     if (bytes !== item.bytes || hash.digest('hex') !== item.sha) throw new Error('Model checksum or size mismatch');
-    fs.closeSync(handle); fs.renameSync(temporary, destination); console.log(' · verified');
+    fs.closeSync(handle); fs.renameSync(temporary, destination); if (!quiet) console.log(' · verified');
   } catch (error) { try { fs.closeSync(handle); } catch {} fs.rmSync(temporary, { force: true }); throw error; }
 }
 export function setupStatus(config = loadConfig()) {

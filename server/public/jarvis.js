@@ -35,6 +35,36 @@
     return fetch(path, Object.assign({}, options, {headers:headers, cache:'no-store', referrerPolicy:'no-referrer'}));
   }
 
+  window.jarvisStreamFetch = apiFetch;
+
+  window.jarvisAPI = async function(path, options) {
+    var response = await apiFetch(path, options);
+    var data = await response.json();
+    if (!response.ok) throw Object.assign(new Error(data.error || 'Bridge unavailable.'), {status:response.status});
+    return data;
+  };
+
+  var manualVoiceView = false;
+  var lastDefaultVoiceReady = null;
+  window.jarvisWorkspace = function(page, options) {
+    if(page==='voice'||page==='conversation'){
+      if(!options || !options.automatic)manualVoiceView=true;
+      chooseView(page==='voice'?'voice':'chat');
+    }
+    document.body.dataset.workspace = page;
+    ['personalityDialog','kanban-panel','archive-panel','settings-panel'].forEach(function(id) {
+      document.getElementById(id).hidden = ({personalityDialog:'personality','kanban-panel':'kanban','archive-panel':'archive','settings-panel':'settings'})[id] !== page;
+    });
+    document.querySelectorAll('.view-switch button').forEach(function(button) {
+      button.setAttribute('aria-current', ({chatView:'conversation',voiceView:'voice',personalityBtn:'personality'})[button.id] === page ? 'page' : 'false');
+    });
+    document.body.dataset.sidebar = 'closed';
+    window.dispatchEvent(new CustomEvent('jarvis-workspace',{detail:page}));
+  };
+  document.getElementById('chatView').addEventListener('click',function(){window.jarvisWorkspace('conversation');});
+  document.getElementById('voiceView').addEventListener('click',function(){window.jarvisWorkspace('voice');});
+  window.jarvisWorkspace('conversation', {automatic:true});
+
   // CSS loads the host theme before first paint; this palette also drives canvas.
   function themeRgb(value, fallback) {
     var match = String(value || '').trim().match(/^#([a-f\d]{6}|[a-f\d]{3})$/i);
@@ -72,6 +102,7 @@
       });
       root.style.colorScheme = theme.mode === 'light' ? 'light' : 'dark';
       root.dataset.theme = theme.name || 'Omarchy';
+      document.getElementById('themeName').textContent = root.dataset.theme;
       var schemeMeta = document.querySelector('meta[name="color-scheme"]');
       if (schemeMeta) schemeMeta.content = root.style.colorScheme;
       var chromeMeta = document.querySelector('meta[name="theme-color"]');
@@ -81,7 +112,7 @@
     } catch (e) { /* Keep the last valid theme when the bridge is unreachable. */ }
     finally { clearTimeout(timer); themeLoading = false; }
   }
-  window.setInterval(loadTheme, 5000);
+  window.setInterval(loadTheme, 2000);
   document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') loadTheme(); });
 
   if (token) {
@@ -343,10 +374,10 @@
       $('#assistantNameInput').value = data.assistantName;
       $('#personalityInput').value = data.personality;
       $('#userNameInput').value = data.userName;
-      $('#personalityDialog').showModal();
+      window.jarvisWorkspace('personality');
     } catch (error) { addSystem(error.message); }
   });
-  $('#personalityCancel').addEventListener('click', function () { $('#personalityDialog').close(); });
+  $('#personalityCancel').addEventListener('click', function () { window.jarvisWorkspace('conversation'); });
   $('#personalityCopy').addEventListener('click', async function () {
     var text = $('#personalityInput').value || '';
     try {
@@ -369,7 +400,7 @@
           userName:$('#userNameInput').value, revision:editingRevision})});
       if (!res.ok) throw new Error(parseErrorText(await res.text(), res.status));
       applyProfile(await res.json());
-      $('#personalityDialog').close();
+      window.jarvisWorkspace('conversation');
       historySignature = '';
       loadHistory();
     } catch (error) { $('#personalityError').textContent = error.message; }
@@ -487,7 +518,7 @@
   /* Transcript                                                          */
   /* ------------------------------------------------------------------ */
 
-  var MAX_TRANSCRIPT_LINES = 40;
+  var MAX_TRANSCRIPT_LINES = Infinity;
 
   function nearBottom() {
     var t = el.transcript;
@@ -509,21 +540,42 @@
     while (t.children.length > MAX_TRANSCRIPT_LINES) t.removeChild(t.firstElementChild);
   }
 
-  // Voice view has no transcript window: mirror the latest line into a one-line ticker.
+  // Reactor caption component: show assistant output and pan long lines in place.
+  var coreCaption = (function () {
+    var motion = null;
+    var lastText = '';
+    var reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+    function animate() {
+      if (motion) motion.cancel();
+      motion = null;
+      if (!el.tickerText || !el.voiceTicker || el.voiceTicker.hidden) return;
+      var overflow = el.tickerText.scrollWidth - el.tickerText.parentElement.clientWidth;
+      if (overflow > 0 && !reducedMotion.matches) {
+        motion = el.tickerText.animate([
+          { transform: 'translateX(0)', offset: 0 },
+          { transform: 'translateX(0)', offset: .15 },
+          { transform: 'translateX(-' + overflow + 'px)', offset: .85 },
+          { transform: 'translateX(-' + overflow + 'px)', offset: 1 }
+        ], { duration: Math.max(6000, overflow * 35), iterations: Infinity, direction: 'alternate', easing: 'linear' });
+      }
+    }
+    if (el.tickerText && window.ResizeObserver) new ResizeObserver(animate).observe(el.tickerText.parentElement);
+    reducedMotion.addEventListener('change', animate);
+    return {
+      update: function (text) {
+        if (!el.voiceTicker || !el.tickerText || text === lastText) return;
+        lastText = text;
+        el.voiceTicker.hidden = !text;
+        el.tickerText.textContent = text;
+        animate();
+      }
+    };
+  })();
+
   function mirrorTicker(line) {
-    if (!el.voiceTicker || !el.tickerRole || !el.tickerText || !line) return;
-    var roleEl = line.querySelector('.line-role');
+    if (!line || !line.classList.contains('assistant')) return;
     var textEl = line.querySelector('.line-text');
-    if (!roleEl || !textEl) return;
-    el.tickerRole.textContent = roleEl.textContent;
-    el.tickerText.textContent = textEl.textContent;
-    // Keep the newest text visible; the box clips to a few wrapped lines.
-    el.tickerText.scrollTop = el.tickerText.scrollHeight;
-    el.voiceTicker.classList.toggle('is-user', line.classList.contains('user'));
-    el.voiceTicker.classList.toggle('is-assistant', line.classList.contains('assistant'));
-    el.voiceTicker.classList.toggle('is-system', line.classList.contains('system'));
-    el.voiceTicker.classList.toggle('is-error', line.classList.contains('error'));
-    el.voiceTicker.classList.toggle('is-streaming', line.classList.contains('streaming'));
+    if (textEl) coreCaption.update(textEl.textContent);
   }
 
   // kind: 'user' | 'assistant' | 'system' | 'error'
@@ -668,6 +720,7 @@
       if (!res.ok) return;
       var data = await res.json();
       if (runId !== generation || (state !== S.IDLE && state !== S.BOOT)) return;
+      document.body.dataset.agent = data.agent || "";
       remoteBusy = data.busy === true;
       applyProfile(data.profile);
       renderControls();
@@ -676,6 +729,7 @@
       if (signature === historySignature) return;
       historySignature = signature;
       el.transcript.innerHTML = '';
+      coreCaption.update('');
       (data.messages || []).slice(-MAX_TRANSCRIPT_LINES).forEach(function (message) {
         addLine(message.role, message.text);
       });
@@ -684,6 +738,8 @@
     } catch (e) { /* status polling reports connection failures */ }
     finally { clearTimeout(timer); historyLoading = false; }
   }
+
+  window.addEventListener('jarvis-voice-settings-saved', function () { loadStatus(); });
 
   async function loadStatus() {
     clearTimeout(statusTimer);
@@ -713,6 +769,16 @@
 
       loadHistory();
       voiceInputReady = !!(data.stt && data.stt.ready);
+      var defaultVoiceReady = voiceInputReady && !!(data.tts && data.tts.ready);
+      if(defaultVoiceReady !== lastDefaultVoiceReady){
+        lastDefaultVoiceReady = defaultVoiceReady;
+        if(!manualVoiceView){
+          var workspace = document.body.dataset.workspace;
+          // Keep Settings/onboarding open; update the underlying default only.
+          if(workspace==='conversation'||workspace==='voice')window.jarvisWorkspace(defaultVoiceReady?'voice':'conversation',{automatic:true});
+          else chooseView(defaultVoiceReady?'voice':'chat');
+        }
+      }
       renderControls();
       var readiness = [];
       readiness.push(data.agent && data.agent.access ? data.agent.access : 'Agent defaults');
@@ -964,6 +1030,7 @@
   function stopTracks(stream) {
     if (!stream) return;
     try {
+      if(stream.jarvisStop)stream.jarvisStop();
       stream.getTracks().forEach(function (track) { track.stop(); });
     } catch (e) { /* ignore */ }
   }
@@ -1002,7 +1069,7 @@
     latched = false;
     clearTimeout(errorTimer);
 
-    if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
+    if (!window.jarvisGetMicrophone && (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function')) {
       starting = false;
       setState(S.IDLE);
       armError('MICROPHONE API UNAVAILABLE');
@@ -1014,7 +1081,7 @@
 
     var stream = null;
     try {
-      stream = await navigator.mediaDevices.getUserMedia({
+      stream = window.jarvisGetMicrophone ? await window.jarvisGetMicrophone() : await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,
           noiseSuppression: true,
@@ -1099,6 +1166,7 @@
       }
 
       rec = r;
+      stream.addEventListener('jarvis-camera-ended',function(){if(rec===r){abortRecording();cancelRun();armError('CAMERA AUDIO DISCONNECTED. Check camera Settings and retry.');}},{once:true});
       recording = true;
       starting = false;
       startTimer();
@@ -1949,6 +2017,7 @@
       }
       if (runId !== generation) return;
       el.transcript.innerHTML = '';
+      coreCaption.update('');
       pendingAttachments = []; showAttachments();
       addSystem('SESSION CLEARED');
       addLine('assistant', "I'm ready for you");
@@ -1967,7 +2036,7 @@
   }
 
   if (el.resetBtn) el.resetBtn.addEventListener('click', function () {
-    if (el.transcript.querySelector('.user, .assistant') && !window.confirm('Start a new conversation? This clears the shared conversation on desktop and phone.')) return;
+    if (el.transcript.querySelector('.user, .assistant') && !window.confirm('Start a new conversation? The current chat will be kept in saved conversations.')) return;
     resetSession();
   });
 
@@ -2022,12 +2091,10 @@
     latestBtn.addEventListener('click', function () { scrollTranscript(true); latestBtn.hidden = true; });
   }
   function chooseView(view) {
-    el.body.dataset.view = view;
+    document.body.dataset.view = view;
     $('#chatView').setAttribute('aria-pressed', String(view === 'chat'));
     $('#voiceView').setAttribute('aria-pressed', String(view === 'voice'));
   }
-  $('#chatView').addEventListener('click', function () { chooseView('chat'); });
-  $('#voiceView').addEventListener('click', function () { chooseView('voice'); });
 
   function setOnline(value) {
     var changed = online !== value;
@@ -2519,7 +2586,7 @@
 
   var reactorCanvas = $('#reactor');
   var dustCanvas = $('#dust');
-  reactor = reactorCanvas ? createReactor(reactorCanvas, readLevel) : null;
+  reactor = reactorCanvas ? ((window.createThreeReactor && window.createThreeReactor(reactorCanvas, readLevel)) || createReactor(reactorCanvas, readLevel)) : null;
   var dust = dustCanvas ? createDust(dustCanvas) : null;
 
   function applyReducedMotion(value) {
