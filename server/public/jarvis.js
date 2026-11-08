@@ -347,6 +347,18 @@
     } catch (error) { addSystem(error.message); }
   });
   $('#personalityCancel').addEventListener('click', function () { $('#personalityDialog').close(); });
+  $('#personalityCopy').addEventListener('click', async function () {
+    var text = $('#personalityInput').value || '';
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        var ta = document.createElement('textarea'); ta.value = text; ta.style.position='fixed'; ta.style.opacity='0';
+        document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+      }
+      $('#personalityError').textContent = 'Copied to clipboard.';
+    } catch (e) { $('#personalityError').textContent = 'Copy failed.'; }
+  });
   $('#personalityForm').addEventListener('submit', async function (event) {
     event.preventDefault();
     $('#personalitySave').disabled = true;
