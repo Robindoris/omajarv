@@ -41,8 +41,13 @@ setTimeout(()=>{},30000);
     assert.equal(tunnel.tunnelStatus().state,'up');
     const args=JSON.parse(fs.readFileSync(path.join(home,'tunnel-args'),'utf8'));
     assert.ok(!args.includes('--no-tls-verify'));
-    assert.equal(args[args.indexOf('--origin-ca-pool')+1],paths.certFile);
-    assert.equal(args[args.indexOf('--origin-server-name')+1],'localhost');
+    const ingressFile=args[args.indexOf('--config')+1];
+    assert.deepEqual(JSON.parse(fs.readFileSync(ingressFile,'utf8')),
+      {ingress:[{service:`unix:${paths.serveSocket}`} ]});
+    assert.equal(fs.statSync(ingressFile).mode & 0o777,0o600);
+    assert.ok(args.includes('--hello-world'));
+    assert.ok(!args.includes('--url'));
+    assert.ok(!args.includes('--origin-server-name'));
     assert.ok(!JSON.stringify(tunnel.tunnelStatus()).includes('PRIVATE_DIAGNOSTIC_MARKER'));
     assert.ok(!recorded.join('\n').includes('PRIVATE_DIAGNOSTIC_MARKER'));
     assert.ok(!recorded.join('\n').includes('trycloudflare.com'));
@@ -74,7 +79,7 @@ server.listen(0,'127.0.0.1',()=>console.log(server.address().port));
   assert.equal(fs.existsSync(requestFile),false,'Uploaded playlists must not make network requests');
   const panel=fs.readFileSync('plugin/h3man.jarvis/Panel.qml','utf8');
   assert.ok([...panel.matchAll(/\bText\s*\{/g)].every(match=>panel.slice(match.index,match.index+75).includes('textFormat: Text.PlainText')));
-  console.log('PASS: private file modes, diagnostic suppression, Cloudflare origin verification, safe WAV/M4A conversion, blocked playlist networking and plain native labels.');
+  console.log('PASS: private file modes, diagnostic suppression, private Cloudflare ingress, safe WAV/M4A conversion, blocked playlist networking and plain native labels.');
 } finally {
   stopTunnel?.();
   if(remote){const stopped=once(remote,'exit');remote.kill('SIGTERM');await stopped;}

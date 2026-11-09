@@ -14,6 +14,7 @@ a documentation or color-only edit does not automatically require the full suite
 | Agent model picker | node tests/agent-models.mjs; node tests/desktop-models.mjs |
 | Encrypted sudo and privacy | node tests/sudo.mjs; node tests/privacy-audit.mjs; node tests/integration.mjs |
 | Private Serve socket | node tests/serve-socket.mjs |
+| Cloudflare private ingress | node tests/tunnel.mjs; node tests/serve-socket.mjs |
 | Offline/local privacy behavior | node tests/offline-status.mjs; node tests/local-privacy.mjs |
 | Tailscale | node tests/tailscale.mjs |
 | Palette parser | node tests/theme.mjs |

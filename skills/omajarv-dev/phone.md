@@ -37,10 +37,14 @@ Installed-app manifests contain the token in start_url, so treat them as private
 A stable Tailscale address is useful for installation; rotating Cloudflare URLs are
 not stable app identities across restarts.
 
-Tailscale Serve now targets the private Unix-socket backend in
+Cloudflare Quick Tunnels and Tailscale Serve target the private Unix-socket backend in
 `server/lib/serve-socket.mjs`, not a replaceable loopback TCP listener. Preserve
 socket ownership/mode checks, live-socket probing and retirement of legacy mappings;
 HTTP on this private socket still passes through the shared authenticated handler.
+Cloudflare uses generated private ingress configuration; its --hello-world flag only
+selects Quick Tunnel mode, while the configured Unix service handles requests.
+Do not restore a localhost TLS origin: cloudflared's CA pool also trusts its
+publicly known-key Hello certificate, so a custom CA pool is not certificate pinning.
 The transport must not let another local process impersonate a restarted bridge.
 
 ## Theme updates

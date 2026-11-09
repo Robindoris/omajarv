@@ -21,7 +21,7 @@ Publication-preparation changes:
 - Added first-run model discovery without scanning the whole home directory.
 - Release builder uses a source allowlist and rejects symlinks and credential patterns.
 - Raw tool/provider diagnostics are replaced by application-authored errors.
-- Cloudflare verifies the local bridge certificate rather than accepting any TLS origin.
+- Cloudflare forwards to the protected private Unix socket instead of a loopback TCP origin.
 - Audio decoding reads a restricted pipe and cannot follow uploaded network/file playlists.
 - Native labels render as plain text; phone pages restrict external resources and framing.
 - Routine phone API calls use an authentication header rather than bearer query strings.
@@ -76,7 +76,7 @@ denied, and OpenCode retains its configured permission rules.
 Speech uses whisper-cli even with an older server configuration. Unauthenticated
 localhost whisper-server listeners are never used; install whisper-cli for voice.
 
-Private Tailscale Serve forwards HTTP over a Unix socket in JARVIS's private state
+Cloudflare Quick Tunnels and private Tailscale Serve forward HTTP over a Unix socket in JARVIS's private state
 directory, with socket permissions restricted to the current user. It does not
 trust a replacement listener on the bridge's TCP port. Startup, stop and uninstall
 retire the legacy certificate-unverified TCP mapping; uninstall removes JARVIS's
