@@ -17,7 +17,7 @@ self.addEventListener('fetch', event => {
     })());
   } else if (event.request.mode === 'navigate') {
     event.respondWith(fetch(event.request).catch(() => new Response(
-      '<!doctype html><meta name="viewport" content="width=device-width"><title>JARVIS offline</title><link rel="stylesheet" href="/theme.css"><body style="background:var(--bg);color:var(--text);font:18px sans-serif;padding:2em">JARVIS is offline. Connect Tailscale on your phone and check that your computer is running.<p><button style="background:var(--bg);color:var(--core);border:1px solid var(--core);padding:.5em" onclick="location.reload()">Reconnect</button>',
+      '<!doctype html><meta name="viewport" content="width=device-width"><title>Omajarv offline</title><link rel="stylesheet" href="/theme.css"><body style="background:var(--bg);color:var(--text);font:18px sans-serif;padding:2em">Omajarv is offline. Connect Tailscale on your phone and check that your computer is running.<p><button style="background:var(--bg);color:var(--core);border:1px solid var(--core);padding:.5em" onclick="location.reload()">Reconnect</button>',
       { headers: { 'Content-Type': 'text/html; charset=utf-8' } }
     )));
   }

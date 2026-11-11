@@ -110,7 +110,7 @@ BarWidget {
     text: ""
     tooltipText: {
       var state = root.online ? "online" : "offline"
-      return "JARVIS " + state + (root.agentLabel ? " · " + root.agentLabel : "") + " · click for phone link"
+      return "Omajarv " + state + (root.agentLabel ? " · " + root.agentLabel : "") + " · click for phone link"
     }
     onPressed: function(mouseButton) {
       if (mouseButton === Qt.LeftButton) root.togglePanel()

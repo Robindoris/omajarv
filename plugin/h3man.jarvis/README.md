@@ -1,4 +1,4 @@
-# h3man.jarvis — Omarchy desktop assistant
+# Omarchy Jarvis — Omarchy desktop assistant
 
 Click the reactor or press **Super + Ctrl + J** to open JARVIS.
 

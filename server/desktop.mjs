@@ -28,7 +28,7 @@ async function uploadAttachment(name, bytes) {
 }
 async function chooseAttachments() {
   let result;
-  try { result = await exec('zenity', ['--file-selection', '--multiple', '--separator=\n', '--title=Attach files to JARVIS'], {timeout:120000, maxBuffer:16384}); }
+  try { result = await exec('zenity', ['--file-selection', '--multiple', '--separator=\n', '--title=Attach files to Omajarv'], {timeout:120000, maxBuffer:16384}); }
   catch (error) { if (error.code === 1) return; throw new Error('File picker unavailable. Install zenity or try again.'); }
   const files = result.stdout.trimEnd().split('\n').filter(Boolean);
   if (files.length + pendingAttachments.length > MAX_FILES) throw new Error('Attach at most four files.');

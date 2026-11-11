@@ -328,8 +328,8 @@
   function applyProfile(value) {
     if (!value) return;
     profile = value;
-    document.querySelector('.wordmark').textContent = profile.assistantName;
-    document.title = profile.assistantName;
+    document.querySelector('.wordmark').textContent = profile.assistantName === 'JARVIS' ? 'Omajarv' : profile.assistantName;
+    document.title = profile.assistantName === 'JARVIS' ? 'Omajarv' : profile.assistantName + ' · Omajarv';
     $('#textInput').placeholder = 'Message ' + profile.assistantName + '…';
   }
   $('#personalityBtn').addEventListener('click', async function () {

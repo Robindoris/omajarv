@@ -1,8 +1,8 @@
-# omajarv
+# Omajarv
 
 **Talk to your Omarchy coding agent from the bar—or from your phone.**
 
-omajarv adds a J.A.R.V.I.S. reactor to the Omarchy bar. Open it, type a request or
+Omarchy Jarvis (Omajarv) adds a J.A.R.V.I.S. reactor to the Omarchy bar. Open it, type a request or
 record your voice, and get a reply from your default coding agent. Scan the QR in
 the **Phone** tab to continue that same JARVIS conversation away from the desktop.
 

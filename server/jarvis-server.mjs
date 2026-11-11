@@ -161,10 +161,10 @@ function authorized(req, params) {
 
 function publicLandingPage() {
   return `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>JARVIS</title>
+<title>Omajarv</title>
 <body style="margin:0;min-height:100vh;display:grid;place-items:center;background:#04070a;color:#6ff2ff;
 font:14px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;text-align:center;padding:24px">
-<div><div style="letter-spacing:.4em;font-size:18px;margin-bottom:18px">J.A.R.V.I.S.</div>
+<div><div style="letter-spacing:.4em;font-size:18px;margin-bottom:18px">Omarchy Jarvis</div>
 <div style="color:#7d98a3;max-width:34ch">This endpoint needs its access link.
 Open the QR code from the Omarchy bar, or run <b style="color:#6ff2ff">jarvis qr</b> on the machine.</div></div>
 </body>`;
@@ -446,7 +446,7 @@ async function handler(req, res) {
       if (!authorized(req, url.searchParams)) return sendJson(res, 401, { error: "Access link required" });
       res.setHeader("content-type", "application/manifest+json");
       res.setHeader("cache-control", "no-store");
-      return res.end(JSON.stringify({ id: "/", name: "J.A.R.V.I.S.", short_name: "JARVIS",
+      return res.end(JSON.stringify({ id: "/", name: "Omarchy Jarvis", short_name: "Omajarv",
         start_url: `/?k=${encodeURIComponent(token)}`, scope: "/", display: "standalone",
         background_color: readTheme().palette.bg, theme_color: readTheme().palette.bg,
         icons: [192, 512].map(size => ({src: `/icon-${size}.png`, sizes: `${size}x${size}`, type: "image/png", purpose: "any"})) }));

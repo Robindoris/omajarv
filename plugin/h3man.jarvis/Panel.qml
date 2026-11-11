@@ -37,7 +37,7 @@ Ui.Panel {
   property int activitySeconds: 0
   readonly property bool activityActive: running && (working || remoteBusy)
   readonly property bool waitingForReply: assistantState === "Sending" || assistantState === "Thinking" || assistantState === "Stopping"
-  readonly property string activityTitle: !statusLoaded ? "Connecting to JARVIS" : !running ? "Bridge offline"
+  readonly property string activityTitle: !statusLoaded ? "Connecting to Omajarv" : !running ? "Bridge offline"
     : working ? (assistantState === "Thinking" ? "Waiting for " + (agent.label || "your agent") : assistantState === "Responding" ? "Receiving reply" : assistantState === "Preparing voice" ? "Preparing voice" : assistantState)
     : remoteBusy ? "Agent active on another device" : lastOutcome || "Ready to chat"
   readonly property string activityDetail: !running ? "Start the bridge below to reconnect."
@@ -452,7 +452,7 @@ Ui.Panel {
             spacing: Style.space(6)
             Text { textFormat: Text.PlainText;
               Layout.fillWidth: true
-              text: !root.setup.configured ? "Welcome to JARVIS" : "Finish voice setup"
+              text: !root.setup.configured ? "Welcome to Omajarv" : "Finish voice setup"
               color: root.fg; font.family: root.fontFamily; font.pixelSize: Style.font.body; font.bold: true
             }
             Text { textFormat: Text.PlainText;
@@ -583,7 +583,7 @@ Ui.Panel {
               text: "Jump to latest ↓"; bordered: true; focusable: true
               onClicked: transcript.positionViewAtEnd()
             }
-            Text { textFormat: Text.PlainText; anchors.centerIn: parent; width: parent.width * 0.8; visible: root.messages.length === 0 && !root.streamText && !root.working; text: "What can I help with?\nType below or tap the microphone.\nSuper + Ctrl + J opens JARVIS."; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap; color: OmarchyCommons.Color.muted; font.family: root.fontFamily; font.pixelSize: Style.font.body }
+            Text { textFormat: Text.PlainText; anchors.centerIn: parent; width: parent.width * 0.8; visible: root.messages.length === 0 && !root.streamText && !root.working; text: "What can I help with?\nType below or tap the microphone.\nSuper + Ctrl + J opens Omajarv."; horizontalAlignment: Text.AlignHCenter; wrapMode: Text.WordWrap; color: OmarchyCommons.Color.muted; font.family: root.fontFamily; font.pixelSize: Style.font.body }
           }
           ColumnLayout {
             Layout.fillWidth: true

@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "id": "h3man.jarvis",
-  "name": "JARVIS",
+  "name": "Omarchy Jarvis",
   "version": "1.0.0",
   "author": "h3man",
   "license": "MIT",
@@ -13,7 +13,7 @@
     "barWidget": "plugin/h3man.jarvis/BarWidget.qml"
   },
   "barWidget": {
-    "displayName": "JARVIS",
+    "displayName": "Omajarv",
     "description": "Shows whether the local voice bridge is online and opens a QR code that puts the JARVIS push-to-talk interface on your phone.",
     "category": "AI",
     "aliases": [
