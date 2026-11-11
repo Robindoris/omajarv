@@ -281,7 +281,7 @@ Ui.Panel {
   }
   function launchSetup() {
     Quickshell.execDetached(["omarchy-launch-terminal", "bash", "-c",
-      'if [ -x "$1" ]; then "$1" setup; else bash "$2" --no-plugin; fi; result=$?; printf "\nSetup finished (exit %s). Press Enter to close.\n" "$result"; read -r ignored; exit "$result"',
+      'if [ -f "$2" ]; then bash "$2" --no-plugin; elif [ -x "$1" ]; then "$1" setup; else printf "Setup source is missing. Reinstall Omajarv from its repository.\n"; false; fi; result=$?; printf "\nSetup finished (exit %s). Press Enter to close.\n" "$result"; read -r ignored; exit "$result"',
       "jarvis-setup", root.jarvisBin, (Quickshell.env("HOME") || "") + "/.config/omarchy/plugins/h3man.jarvis/install.sh"])
   }
   function run(action) {
@@ -457,7 +457,7 @@ Ui.Panel {
             }
             Text { textFormat: Text.PlainText;
               Layout.fillWidth: true
-              text: "Setup checks for existing local models and asks before installing anything. You can skip voice models and use text chat."
+              text: "Setup installs the launcher and user service. It asks before installing packages or downloading models. You can skip voice and use text chat."
               wrapMode: Text.WordWrap; color: OmarchyCommons.Color.muted; font.family: root.fontFamily; font.pixelSize: Style.font.caption
             }
             Ui.Button { Layout.fillWidth: true; text: "Open setup"; bordered: true; focusable: true; onClicked: root.launchSetup() }
@@ -592,11 +592,11 @@ Ui.Panel {
               RowLayout {
                 required property var modelData
                 Layout.fillWidth: true
-                Text { Layout.fillWidth: true; text: modelData.name + " (" + Math.ceil(modelData.size / 1024) + " KB)"; textFormat: Text.PlainText; elide: Text.ElideMiddle; color: root.fg; font.family: root.fontFamily }
+                Text { textFormat: Text.PlainText; Layout.fillWidth: true; text: modelData.name + " (" + Math.ceil(modelData.size / 1024) + " KB)"; elide: Text.ElideMiddle; color: root.fg; font.family: root.fontFamily }
                 Ui.Button { text: "Remove"; bordered: true; enabled: !root.working; onClicked: root.command({action:"removeAttachment", id:modelData.id}) }
               }
             }
-            Text { Layout.fillWidth: true; text: "Files are shared with your selected agent. Up to 4 files, 10 MB each."; textFormat: Text.PlainText; wrapMode: Text.WordWrap; color: OmarchyCommons.Color.muted; font.pixelSize: Style.font.bodySmall }
+            Text { textFormat: Text.PlainText; Layout.fillWidth: true; text: "Files are shared with your selected agent. Up to 4 files, 10 MB each."; wrapMode: Text.WordWrap; color: OmarchyCommons.Color.muted; font.pixelSize: Style.font.bodySmall }
             RowLayout {
               Ui.Button { text: "Attach files"; bordered: true; enabled: root.running && !root.working && !root.remoteBusy && root.attachments.length < 4; onClicked: root.command({action:"attachFiles"}) }
               Ui.Button { text: "Paste image"; bordered: true; enabled: root.running && !root.working && !root.remoteBusy && root.attachments.length < 4; onClicked: root.command({action:"pasteClipboard", imageOnly:true}) }

@@ -74,8 +74,44 @@ The installer walks through:
    access. Keeping the default leaves the bridge on loopback, with no public tunnel.
 4. **Startup.** Install `omarchy-jarvis.service` and place the reactor in the bar.
 
-If you install the source through the Omarchy marketplace, open the reactor and
-choose **Assistant → Open setup** to run the same onboarding in a terminal.
+### Install through the Omarchy plugin manager
+
+For a fresh Omarchy Quattro installation with Node.js 22+, `curl`, `jq` and
+OpenSSL already available:
+
+```bash
+omarchy plugin add https://github.com/Robindoris/omajarv.git --enable
+```
+
+This clones the current upstream source and enables the reactor. It does not
+install the launcher, start the bridge, install packages or download models.
+Open the reactor and choose **Assistant → Open setup** to run onboarding in a
+terminal. Package installation and model downloads require confirmation; keep
+network defaults for desktop-only use. Install and sign in to a supported coding
+agent separately. Its provider may process your requests and files.
+
+For text-only setup without package installation or model downloads, run:
+
+```bash
+bash "$HOME/.config/omarchy/plugins/h3man.jarvis/install.sh" --no-plugin --no-packages --no-models
+```
+
+That command still installs the launcher and starts the systemd user service.
+Keep the marketplace checkout: the launcher and service run from it. If Node.js,
+`curl`, `jq` or OpenSSL is missing, setup stops and explains the prerequisite;
+install missing prerequisites explicitly before retrying. Declining the regular
+package prompt stops that run; use the text-only command above to skip packages.
+
+If you already installed Omajarv from another clone, keep using that installation
+and its update instructions; do not add a second copy over it. `Open setup` prefers
+the marketplace installer when present, with the installed CLI as a fallback for
+legacy plugin-only layouts. Configuration is preserved on reruns, including
+existing access and networking choices.
+
+The marketplace currently labels this project **Manual setup**. The command above
+uses Omarchy's git installer directly; it does not imply marketplace approval of
+the latest commit. See the [marketplace install review](docs/MARKETPLACE-INSTALL.md)
+for validation, update/removal limits and the proposed listing change.
 
 Voice is optional. Choose **Skip** for both models to start with text chat.
 To revisit setup later:

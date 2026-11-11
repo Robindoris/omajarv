@@ -7,7 +7,7 @@ a documentation or color-only edit does not automatically require the full suite
 | --- | --- |
 | Native panel | omarchy plugin validate .; validate nested/installed plugin as appropriate; qmlformat parsing; live runtime logs/layout when deployed |
 | Model discovery/download setup | node tests/onboarding.mjs |
-| Installer/removal/defaults | node tests/install.mjs |
+| Installer/removal/defaults | node tests/install.mjs; node tests/marketplace-install.mjs |
 | Agent/API/auth/history/stop/QR | node tests/integration.mjs |
 | Personality/live memory | node tests/personality.mjs; node tests/integration.mjs |
 | Upload limits, storage and clipboard delivery | node tests/attachments.mjs; node tests/integration.mjs |

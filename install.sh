@@ -70,8 +70,10 @@ if $uninstall; then
   rm -f "$UNIT"
   systemctl --user daemon-reload 2>/dev/null || true
   omarchy plugin disable h3man.jarvis 2>/dev/null || true
-  if [[ -f "$PLUGIN_DIR/manifest.json" ]] && [[ $(jq -r .id "$PLUGIN_DIR/manifest.json") == h3man.jarvis ]]; then rm -rf "$PLUGIN_DIR"; fi
+  # Resolve launcher ownership while its target still exists. A marketplace
+  # checkout is both PLUGIN_DIR and ROOT; deleting it first breaks readlink -f.
   if [[ -L "$BIN_DIR/jarvis" ]] && [[ $(readlink -f "$BIN_DIR/jarvis") == "$ROOT/bin/jarvis" ]]; then rm -f "$BIN_DIR/jarvis"; fi
+  if [[ -f "$PLUGIN_DIR/manifest.json" ]] && [[ $(jq -r .id "$PLUGIN_DIR/manifest.json") == h3man.jarvis ]]; then rm -rf "$PLUGIN_DIR"; fi
   say "Done. Models and config were kept:"
   echo "    $DATA_DIR"
   echo "    $CONFIG_DIR"
