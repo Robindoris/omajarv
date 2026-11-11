@@ -24,7 +24,7 @@ function fields(input){
  if('recurrence' in input){const r=input.recurrence;if(!r||!['none','daily','weekly','monthly'].includes(r.frequency)||!Number.isInteger(r.interval)||r.interval<1||r.interval>365)fail('Invalid recurrence interval.');out.recurrence={frequency:r.frequency,interval:r.interval};}
  return out;
 }
-function normalize(task){
+export function normalize(task){
  if(!task||typeof task.id!=='string'||!/^[\w:-]{1,100}$/.test(task.id)||!columns.includes(task.status))fail('Invalid task in backup.');
  const clean=fields(task);if(!clean.title)fail('Task title missing in backup.');
  const defaults={notes:'',priority:'normal',dueDate:'',recurrence:{frequency:'none',interval:1},execution:task.status==='done'?'completed':'idle',attempts:0,lastError:'',createdAt:task.updatedAt||Date.now()};
@@ -35,22 +35,26 @@ function normalize(task){
  result.lastError=typeof task.lastError==='string'?task.lastError.slice(0,2000):'';
  return result;
 }
-export function createKanban(directory,{now=()=>new Date()}={}) {
+export function createKanban(directory,{now=()=>new Date(),storage,recover=true}={}) {
  const file=path.join(directory,'kanban.json'),backupsFile=path.join(directory,'kanban-backups.json');
  let board={revision:0,tasks:[],requests:[]},backups=[];
+ if(storage){({board,backups}=storage.load());}else {
  try{const saved=JSON.parse(fs.readFileSync(file,'utf8'));if(!Number.isSafeInteger(saved.revision)||saved.revision<0||!Array.isArray(saved.tasks)||saved.tasks.length>200)fail('Invalid stored board. Restore a private backup.');board={revision:saved.revision,tasks:saved.tasks.map(normalize),requests:saved.requests||[]};fs.chmodSync(file,0o600);}catch(error){if(error.code!=='ENOENT')throw error;}
  try{backups=JSON.parse(fs.readFileSync(backupsFile,'utf8'));fs.chmodSync(backupsFile,0o600);}catch(error){if(error.code!=='ENOENT')throw error;}
+ }
  const stamp=()=>now().getTime();
  const snapshot=(value=board)=>({format:'jarvis-kanban',version:1,createdAt:stamp(),revision:value.revision,tasks:structuredClone(value.tasks)});
  function commit(tasks,request){
   const history=[...backups,snapshot()].slice(-20);
   const next={revision:board.revision+1,tasks,requests:request?[...board.requests,request].slice(-100):board.requests};
   // A pre-change recovery point is durable before replacing the canonical board.
+  if(storage)storage.save(next,history);else {
   writePrivateFile(backupsFile,JSON.stringify(history));
-  writePrivateFile(file,JSON.stringify(next));backups=history;board=next;
+  writePrivateFile(file,JSON.stringify(next));}
+  backups=history;board=next;
  }
  // Interrupted processes must never restart an old run or silently retry it.
- if(board.tasks.some(t=>['queued','running'].includes(t.execution))){
+ if(recover&&board.tasks.some(t=>['queued','running'].includes(t.execution))){
   commit(board.tasks.map(t=>['queued','running'].includes(t.execution)?{...t,execution:'interrupted',lastError:'JARVIS restarted before this run finished. Review the task before retrying.',updatedAt:stamp()}:t));
  }
  function complete(task,tasks){

@@ -161,3 +161,38 @@ increments the live revision instead of reusing the backup revision, and convert
 unfinished imported work to Interrupted. A restore never restarts tasks or reverses
 model/tool side effects. Keep the revision reviewed by the user in editor/restore
 requests, so polling cannot silently bless a stale edit or destructive restore.
+
+
+### PostgreSQL Kanban storage
+
+When the shared bridge PostgreSQL connection is configured, Kanban uses the same
+project database and schema. The versioned `kanban_state` table stores the board,
+request deduplication records, and the latest 20 pre-change history snapshots.
+Every mutation and run transition commits the board and recovery history in one
+transaction under a database lock. Concurrent stale revisions return 409. Reads
+and writes fail closed if configured storage is unavailable.
+
+On the next bridge startup, existing board and backup JSON files are imported once
+without deleting or rewriting originals. Later startups use PostgreSQL and mark
+unfinished queued/running tasks Interrupted. Restart only when no reply is active.
+Unconfigured installations retain JSON storage. Original JSON files are migration
+recovery copies, not up-to-date exports after switching; use the authenticated
+board backup API for current board exports and normal database backups for the
+complete database. Restore retains the existing review/confirmation requirement.
+
+Verify using `node tests/kanban.mjs`, `node tests/kanban-runner.mjs`,
+`node tests/kanban-bridge.mjs`, and
+`JARVIS_TEST_DATABASE_ENV=PRIVATE_PROJECT_ENV node tests/postgres-kanban.mjs`.
+The PostgreSQL test uses synthetic tasks in a disposable random schema.
+
+## Calendar and notification inbox
+
+`lib/planner.mjs` owns built-in calendar validation, recurrence, reminder collection
+and persistent notifications. It uses the shared PostgreSQL connection or private
+JSON on unconfigured installs; failures never silently switch backends. Calendar
+and inbox routes require the normal bridge credential and same-site JSON mutations.
+See `docs/API.md` for event fields, revision/idempotency rules and scheduler limits.
+`calendar-cli.mjs` uses the private authenticated socket. `frontend/src/calendar.jsx`
+owns the month grid, series editor and inbox; navigation remains in the dashboard.
+Run `tests/planner.mjs` (also with an isolated PostgreSQL schema),
+`tests/kanban-bridge.mjs`, `tests/theme-browser.mjs`, and rebuild frontend assets.

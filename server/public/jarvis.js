@@ -52,8 +52,8 @@
       chooseView(page==='voice'?'voice':'chat');
     }
     document.body.dataset.workspace = page;
-    ['personalityDialog','kanban-panel','archive-panel','settings-panel'].forEach(function(id) {
-      document.getElementById(id).hidden = ({personalityDialog:'personality','kanban-panel':'kanban','archive-panel':'archive','settings-panel':'settings'})[id] !== page;
+    ['personalityDialog','kanban-panel','archive-panel','settings-panel','calendar-panel','notifications-panel'].forEach(function(id) {
+      document.getElementById(id).hidden = ({personalityDialog:'personality','kanban-panel':'kanban','archive-panel':'archive','settings-panel':'settings','calendar-panel':'calendar','notifications-panel':'notifications'})[id] !== page;
     });
     document.querySelectorAll('.view-switch button').forEach(function(button) {
       button.setAttribute('aria-current', ({chatView:'conversation',voiceView:'voice',personalityBtn:'personality'})[button.id] === page ? 'page' : 'false');
@@ -168,7 +168,7 @@
 
   var state = S.BOOT;
   var online = null;            // null = unknown, true/false after status
-  var agentName = 'CODEX';
+  var agentName = 'CONNECTING';
   var limits = { maxRecordingSec: 120, maxTextChars: 4000 };
   var generation = 0;           // bumped to invalidate async work
   var statusTimer = 0;
@@ -188,6 +188,8 @@
     listening: 'CAPTURE',
     transcribing: 'DECODE',
     thinking: 'REASON',
+    working: 'TOOLS',
+    responding: 'REPLY',
     speaking: 'OUTPUT',
     error: 'FAULT'
   };
@@ -197,7 +199,9 @@
     idle: 'STANDBY',
     listening: 'MIC LIVE',
     transcribing: 'DECODING',
-    thinking: 'AGENT WORKING',
+    thinking: 'AGENT THINKING',
+    working: 'EXECUTING TOOLS',
+    responding: 'RECEIVING REPLY',
     speaking: 'AUDIO OUT',
     error: 'FAULT'
   };
@@ -219,9 +223,9 @@
 
   function renderPill() {
     if (!el.statusPill) return;
-    var visual = (online === false) ? 'offline' : state;
+    var visual = (online === false) ? 'offline' : (remoteBusy && state===S.IDLE ? 'thinking' : state);
     el.statusPill.dataset.state = visual;
-    el.statusText.textContent = pillLabel();
+    el.statusText.textContent = remoteBusy&&state===S.IDLE ? (remoteActivity&&remoteActivity.source==='kanban'?'KANBAN ACTIVE':'AGENT WORKING') : pillLabel();
   }
 
   function pttLabelForState() {
@@ -248,12 +252,45 @@
 
   var voiceInputReady = true;
   var remoteBusy = false;
+  var remoteActivity = null;
+  var localAgentPhase = 'thinking';
+  function renderCoreActivity() {
+    var phase=remoteActivity && remoteActivity.phase;
+    var running=remoteBusy && ['thinking','working','responding'].indexOf(phase)>=0;
+    var mode=state===S.THINKING?localAgentPhase:state;
+    if ((state===S.IDLE||state===S.BOOT) && remoteBusy) mode=running?phase:'thinking';
+    if (state===S.IDLE && phase==='error')mode='error';
+    if (online===false && (state===S.IDLE||state===S.BOOT)) mode='idle';
+    document.body.dataset.coreState=mode;
+    if(el.readoutMode)el.readoutMode.textContent=MODE_LABEL[mode]||mode;
+    if(el.transcriptHint)el.transcriptHint.textContent=HINT_LABEL[mode]||'';
+    document.body.dataset.agentBusy=String(remoteBusy);
+    document.body.dataset.kanbanActivity=String(!!(remoteActivity&&remoteActivity.source==='kanban'));
+    if(reactor)reactor.setMode(mode);
+    var banner=$('#agentActivity');
+    if(banner){
+      banner.dataset.visible=String(!!remoteActivity);
+      banner.setAttribute('aria-hidden',String(!remoteActivity));
+      if(remoteActivity){
+        var labels={thinking:'Thinking',working:'Executing tools',responding:'Receiving reply',completed:'Completed',error:'Failed — review the task',interrupted:'Interrupted',unknown:'Connection interrupted — activity unknown'};
+        $('#activityTitle').textContent=remoteActivity.task?'Kanban · '+remoteActivity.task.title:'Agent activity';
+        $('#activityPhase').textContent=labels[phase]||'Waiting for agent';
+        banner.dataset.phase=phase;
+      }
+    }
+  }
+  function receiveActivity(data) {
+    remoteActivity=data.activity||null;
+    renderCoreActivity();renderPill();
+  }
+
   var historySignature = "";
   var profile = {assistantName:'JARVIS', userName:''};
   var editingRevision;
   // Separate from chat/SSE/speech. Only encrypted bytes go to the approval API.
   var sudoRequest = null;
   var sudoPolling = false;
+  var sudoEnabled = true;
   var sudoSubmitting = false;
   function sudoUnavailable(message) {
     if (!sudoRequest) return;
@@ -268,14 +305,24 @@
     sudoRequest = null;
   }
   async function pollSudo() {
-    if (sudoPolling || sudoSubmitting || document.visibilityState === 'hidden') return;
+    if (!sudoEnabled || sudoPolling || sudoSubmitting || document.visibilityState === 'hidden') return;
     sudoPolling = true;
     var ctrl = new AbortController();
     var timer = setTimeout(function () { ctrl.abort(); }, 6000);
     try {
       var res = await apiFetch('/api/sudo/pending', {cache:'no-store', signal:ctrl.signal});
+      if (res.status === 403) {
+        sudoEnabled = false;
+        sudoUnavailable('Phone authorization is unavailable on this connection.');
+        return;
+      }
       if (!res.ok) throw new Error('Unable to check authorization');
       var data = await res.json();
+      if (data.enabled === false) {
+        sudoEnabled = false;
+        sudoUnavailable('Phone authorization is unavailable on this connection.');
+        return;
+      }
       var pending = (data.requests || []).filter(function (request) { return request.expiresAt > Date.now(); });
       if (sudoRequest) {
         var stillWaiting = pending.some(function (request) { return request.id === sudoRequest.id; });
@@ -490,7 +537,8 @@
     renderPill();
     renderPTT();
     renderControls();
-    if (reactor) reactor.setMode(next);
+    if(next===S.THINKING)localAgentPhase='thinking';
+    renderCoreActivity();
   }
 
   function flashStatus(text, ms) {
@@ -720,8 +768,13 @@
       if (!res.ok) return;
       var data = await res.json();
       if (runId !== generation || (state !== S.IDLE && state !== S.BOOT)) return;
+      if (data.agent && document.body.dataset.agent !== data.agent) {
+        setAgent(data.agent);
+        loadStatus();
+      }
       document.body.dataset.agent = data.agent || "";
       remoteBusy = data.busy === true;
+      receiveActivity(data);
       applyProfile(data.profile);
       renderControls();
       if (remoteBusy) return;
@@ -735,7 +788,7 @@
       });
       if (!(data.messages || []).length) addSystem('HOLD THE CORE TO SPEAK');
       scrollTranscript(true);
-    } catch (e) { /* status polling reports connection failures */ }
+    } catch (e) { if(remoteActivity){remoteActivity=Object.assign({},remoteActivity,{phase:'unknown'});remoteBusy=false;renderCoreActivity();} }
     finally { clearTimeout(timer); historyLoading = false; }
   }
 
@@ -753,8 +806,11 @@
       if (!data || typeof data !== 'object') throw new Error('BAD STATUS');
 
       online = true;
-      var label = (data.agent && (data.agent.label || data.agent.id)) || 'CODEX';
+      remoteBusy=data.chatBusy===true;
+      receiveActivity(data);
+      var label = (data.agent && (data.agent.label || data.agent.id)) || 'CONNECTING';
       setAgent(label);
+      window.dispatchEvent(new CustomEvent('jarvis-agent-status', {detail:data}));
       bootAgentLine(true, agentName);
       if (data.limits && typeof data.limits === 'object') {
         if (Number(data.limits.maxRecordingSec) > 0) limits.maxRecordingSec = Number(data.limits.maxRecordingSec);
@@ -793,6 +849,9 @@
       statusTimer = setTimeout(loadStatus, 15000);
     } catch (err) {
       online = false;
+      remoteBusy=false;
+      if(remoteActivity)remoteActivity=Object.assign({},remoteActivity,{phase:'unknown'});
+      renderCoreActivity();
       bootAgentLine(false);
       if (el.statusPill) el.statusPill.title = 'Server unreachable — retrying';
       renderPill();
@@ -1545,13 +1604,18 @@
           if (eventName === 'meta') {
             pendingAttachments = pendingAttachments.filter(function (f) { return !attached.some(function (a) { return a.id === f.id; }); });
             showAttachments();
-            if (data.agent) setAgent(data.agent);
+            if (data.agent) setAgent(data.label || data.agent);
+            if (data.fallback) { addSystem('Credits exhausted · continuing with a free OpenCode model'); loadStatus(); }
             if (data.session) setSession(String(data.session).slice(-4).toUpperCase());
             return true;
+          }
+          if (eventName === 'activity') {
+            localAgentPhase=data.phase||'thinking';renderCoreActivity();return true;
           }
           if (eventName === 'token') {
             var delta = typeof data.text === 'string' ? data.text : '';
             if (!delta) return true;
+            localAgentPhase='responding';renderCoreActivity();
             if (marchTimer) { clearInterval(marchTimer); marchTimer = null; }
             raw += delta;
             assistant.setText(raw);
@@ -2116,7 +2180,7 @@
     setOnline(false);
   });
   document.addEventListener('visibilitychange', function () {
-    if (document.visibilityState === 'visible' && online === false) loadStatus();
+    if (document.visibilityState === 'visible') loadStatus();
   });
 
   window.addEventListener('unhandledrejection', function (event) {
@@ -2479,7 +2543,7 @@
 
     return {
       setMode: function (next) {
-        mode = next;
+        mode = next==='working'||next==='responding'?S.THINKING:next;
       },
       setReduced: function (value) {
         reduced = !!value;
@@ -2624,7 +2688,7 @@
   // Keep the interface usable after orientation changes.
   window.addEventListener('orientationchange', function () {
     window.setTimeout(function () {
-      if (reactor) reactor.setMode(state);
+      renderCoreActivity();
     }, 250);
   });
 

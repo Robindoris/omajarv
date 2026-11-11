@@ -63,3 +63,40 @@ console.log('PASS: mouse, touch and pen; horizontal, vertical and diagonal rotat
  orbit.dispose();
  console.log('PASS: independent groups, frontmost picking, empty-space rejection, opposite concurrent momentum, animation composition.');
 }
+
+// Empty space manipulates the viewpoint, preserving model geometry and distance.
+for(const pointerType of ['mouse','touch','pen']){
+ const canvas=new Canvas();canvas.getBoundingClientRect=()=>({left:0,top:0,width:390,height:400});
+ const camera=new THREE.PerspectiveCamera(40,390/400,.1,100);camera.position.set(0,0,6);camera.lookAt(0,0,0);
+ const object=new THREE.Group();object.name='Fixture';object.add(new THREE.Mesh(new THREE.SphereGeometry(.5),new THREE.MeshBasicMaterial()));
+ const scene=new THREE.Scene();scene.add(object);scene.updateMatrixWorld(true);
+ let reduced=false;const orbit=installCoreOrbit(canvas,null,camera,()=>reduced,{targets:[object],cameraOrbit:true});
+ const before=camera.position.clone(),rotation=object.quaternion.clone();
+ event(canvas,'pointerdown',10,10,{pointerType});assert.equal(canvas.dataset.orbitGesture,'camera');
+ event(canvas,'pointermove',70,50,{pointerType});event(canvas,'pointerup',70,50,{pointerType});
+ assert.ok(camera.position.distanceTo(before)>.5);assert.ok(Math.abs(camera.position.length()-6)<1e-8);
+ assert.ok(object.quaternion.angleTo(rotation)<1e-8,'Camera drag does not rotate the object');
+ const forward=new THREE.Vector3();camera.getWorldDirection(forward);assert.ok(forward.angleTo(camera.position.clone().negate())<1e-7,'View keeps looking at the core');
+ const released=camera.position.clone();orbit.update(.06);assert.ok(camera.position.distanceTo(released)>.001);
+ reduced=true;const frozen=camera.position.clone();orbit.update(.06);assert.ok(camera.position.distanceTo(frozen)<1e-8);
+ event(canvas,'keydown',0,0,{key:'ArrowLeft'});assert.ok(camera.position.distanceTo(frozen)>.01,'Keyboard camera manipulation works with reduced motion');
+ orbit.dispose();
+}
+console.log('PASS: empty-space camera orbit, fixed radius, object isolation, keyboard and reduced motion.');
+
+{
+ const canvas=new Canvas(),pivot=new THREE.Group(),camera=new THREE.PerspectiveCamera();camera.position.set(0,0,6);
+ const orbit=installCoreOrbit(canvas,pivot,camera,()=>false,{cameraOrbit:true});
+ event(canvas,'pointerdown');event(canvas,'pointermove',155,135);
+ const held=pivot.quaternion.clone();orbit.returnHome(.1);assert.ok(pivot.quaternion.angleTo(held)<1e-7,'Auto-home never fights a held drag');
+ event(canvas,'pointerup');for(let i=0;i<20;i++){orbit.update(.05);orbit.returnHome(.05);}
+ assert.ok(pivot.quaternion.angleTo(new THREE.Quaternion())>.1,'Released touch gets a grace period');
+ for(let i=0;i<1000;i++){orbit.update(.05);orbit.returnHome(.05);}
+ assert.ok(pivot.quaternion.angleTo(new THREE.Quaternion())<.001,'Untouched core gradually returns home');
+ for(let i=0;i<40;i++)event(canvas,'keydown',0,0,{key:'ArrowRight'});
+ assert.ok(camera.position.distanceTo(new THREE.Vector3(0,0,6))>5);
+ for(let i=0;i<1000;i++){orbit.update(.05);orbit.returnHome(.05);}
+ assert.ok(camera.position.distanceTo(new THREE.Vector3(0,0,6))<.001,'Camera returns home even from the opposite side');
+ orbit.dispose();
+}
+console.log('PASS: default pose recovery, held-drag protection and touch grace period.');

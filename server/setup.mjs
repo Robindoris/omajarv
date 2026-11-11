@@ -18,6 +18,124 @@ export const downloads = {
     {file:'MODEL_CARD',bytes:517,sha:'fbee1529c89d36b3fe76d7e9f3f832dce17f44900a52d76a9bda735654766b4d'},
   ].map(item => ({...item, url:`https://huggingface.co/rhasspy/piper-voices/resolve/${piperRev}/en/en_US/ljspeech/medium/${item.file}`})),
 };
+// Pinned Whisper variants share the upstream MIT terms of the default model.
+export const whisperChoices = {
+  lightweight: {name:'Lightweight · Whisper tiny.en', description:'Fastest, lowest memory use; lower recognition accuracy.', files:[{file:'ggml-tiny.en.bin',bytes:77704715,sha:'921e4cf8686fdd993dcd081a5da5b6c365bfde1162e72b08d75ac75289920b1f',url:`https://huggingface.co/ggerganov/whisper.cpp/resolve/${whisperRev}/ggml-tiny.en.bin`}]},
+  multilingualLight: {name:'Lightweight multilingual · Whisper tiny',description:'Fast multilingual recognition, including Slovak; lower accuracy.',files:[{file:'ggml-tiny.bin',bytes:77691713,sha:'be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21',url:`https://huggingface.co/ggerganov/whisper.cpp/resolve/${whisperRev}/ggml-tiny.bin`}]},
+  multilingualHeavy: {name:'Heavy multilingual · Whisper small',description:'Multilingual recognition, including Slovak; higher memory use and processing time.',files:[{file:'ggml-small.bin',bytes:487601967,sha:'1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b',url:`https://huggingface.co/ggerganov/whisper.cpp/resolve/${whisperRev}/ggml-small.bin`}]},
+  balanced: {name:'Balanced · Whisper base.en',description:'A balance of speed and recognition accuracy.',files:downloads.whisper},
+  heavy: {name:'Heavy · Whisper small.en',description:'Higher recognition accuracy; more memory and processing time.',files:[{file:'ggml-small.en.bin',bytes:487614201,sha:'c6138d6d58ecc8322097e0f987c32f1be8bb0a18532a3f88f734d1bbf9c41e5d',url:`https://huggingface.co/ggerganov/whisper.cpp/resolve/${whisperRev}/ggml-small.en.bin`}]},
+};
+// Explicit dashboard choices; the CLI default remains LJ Speech.
+export const piperChoices = {
+ 'ljspeech-medium': {name:'Piper LJ Speech · English (US) · medium',description:'US English voice · medium quality.',terms:'Model card: public-domain training dataset; upstream model/runtime terms apply',modelCard:`https://huggingface.co/rhasspy/piper-voices/blob/${piperRev}/en/en_US/ljspeech/medium/MODEL_CARD`,files:downloads.piper},
+ ...{
+  "cori-high": {
+    "name": "Piper Cori \u00b7 English (UK) \u00b7 high",
+    "description": "British English female voice \u00b7 high quality.",
+    "terms": "Model card: public-domain LibriVox dataset; upstream model/runtime terms apply",
+    "modelCard": "https://huggingface.co/rhasspy/piper-voices/blob/5041a7a49ae5b3a0f30e6837769eb03fdbb231bd/en/en_GB/cori/high/MODEL_CARD",
+    "files": [
+      {
+        "file": "en_GB-cori-high.onnx",
+        "bytes": 114219352,
+        "sha": "470b4dd634c98f8a4850d7626ffc3dfc90774628eeef6605a6dd8f88f30a5903",
+        "url": "https://huggingface.co/rhasspy/piper-voices/resolve/5041a7a49ae5b3a0f30e6837769eb03fdbb231bd/en/en_GB/cori/high/en_GB-cori-high.onnx"
+      },
+      {
+        "file": "en_GB-cori-high.MODEL_CARD",
+        "bytes": 468,
+        "sha": "136e7bd168b6c35b4a5df01a0253297e5773b5775ceae0af5160f264aa58208f",
+        "url": "https://huggingface.co/rhasspy/piper-voices/resolve/5041a7a49ae5b3a0f30e6837769eb03fdbb231bd/en/en_GB/cori/high/MODEL_CARD"
+      },
+      {
+        "file": "en_GB-cori-high.onnx.json",
+        "bytes": 4963,
+        "sha": "9e7fb5b5671612c22f3c81cbe46c1ae87b031a4632bcb509e499dad6f1e2adec",
+        "url": "https://huggingface.co/rhasspy/piper-voices/resolve/5041a7a49ae5b3a0f30e6837769eb03fdbb231bd/en/en_GB/cori/high/en_GB-cori-high.onnx.json"
+      }
+    ]
+  },
+  "ryan-high": {
+    "name": "Piper Ryan \u00b7 English (US) \u00b7 high",
+    "description": "US English voice \u00b7 high quality. Free for noncommercial use.",
+    "terms": "CC BY-NC-SA 4.0 \u00b7 attribution, noncommercial, share-alike; upstream runtime terms apply",
+    "modelCard": "https://huggingface.co/rhasspy/piper-voices/blob/5041a7a49ae5b3a0f30e6837769eb03fdbb231bd/en/en_US/ryan/high/MODEL_CARD",
+    "files": [
+      {
+        "file": "en_US-ryan-high.onnx",
+        "bytes": 120786792,
+        "sha": "b3990d7606e183ec8dbfba70a4607074f162de1a0c412e0180d1ff60bb154eca",
+        "url": "https://huggingface.co/rhasspy/piper-voices/resolve/5041a7a49ae5b3a0f30e6837769eb03fdbb231bd/en/en_US/ryan/high/en_US-ryan-high.onnx"
+      },
+      {
+        "file": "en_US-ryan-high.MODEL_CARD",
+        "bytes": 265,
+        "sha": "7c3b337dd4e96c3f311f476118b15d93867aefa4bee54263e250c45f759fad0d",
+        "url": "https://huggingface.co/rhasspy/piper-voices/resolve/5041a7a49ae5b3a0f30e6837769eb03fdbb231bd/en/en_US/ryan/high/MODEL_CARD"
+      },
+      {
+        "file": "en_US-ryan-high.onnx.json",
+        "bytes": 4166,
+        "sha": "c6d3b98f08315cb4bebf0d49d50fc4ff491b503c64b940cd3d5ca28543b48011",
+        "url": "https://huggingface.co/rhasspy/piper-voices/resolve/5041a7a49ae5b3a0f30e6837769eb03fdbb231bd/en/en_US/ryan/high/en_US-ryan-high.onnx.json"
+      }
+    ]
+  },
+  "lili-medium": {
+    "name": "Piper Lili \u00b7 Slovak \u00b7 medium",
+    "description": "Slovak voice \u00b7 medium quality.",
+    "terms": "Model card: CC0 dataset; upstream model/runtime terms apply",
+    "modelCard": "https://huggingface.co/rhasspy/piper-voices/blob/5041a7a49ae5b3a0f30e6837769eb03fdbb231bd/sk/sk_SK/lili/medium/MODEL_CARD",
+    "files": [
+      {
+        "file": "sk_SK-lili-medium.onnx",
+        "bytes": 63201294,
+        "sha": "d8e21603e0165252849efe0bcb3fbffd1b3193c36bd1f556e1106911e8015526",
+        "url": "https://huggingface.co/rhasspy/piper-voices/resolve/5041a7a49ae5b3a0f30e6837769eb03fdbb231bd/sk/sk_SK/lili/medium/sk_SK-lili-medium.onnx"
+      },
+      {
+        "file": "sk_SK-lili-medium.MODEL_CARD",
+        "bytes": 276,
+        "sha": "d1df98a436e1b22f6bd1792a14fb3592dd816ee250ee3ff9ff3be62cd39c59b0",
+        "url": "https://huggingface.co/rhasspy/piper-voices/resolve/5041a7a49ae5b3a0f30e6837769eb03fdbb231bd/sk/sk_SK/lili/medium/MODEL_CARD"
+      },
+      {
+        "file": "sk_SK-lili-medium.onnx.json",
+        "bytes": 4963,
+        "sha": "b7c474eba411913f9feb65b9da322463e8698e7b200d2b757f6e684802951333",
+        "url": "https://huggingface.co/rhasspy/piper-voices/resolve/5041a7a49ae5b3a0f30e6837769eb03fdbb231bd/sk/sk_SK/lili/medium/sk_SK-lili-medium.onnx.json"
+      }
+    ]
+  },
+  "jirka-medium": {
+    "name": "Piper Jirka \u00b7 Czech \u00b7 medium",
+    "description": "Czech voice \u00b7 medium quality.",
+    "terms": "Model card: CC0 dataset; upstream model/runtime terms apply",
+    "modelCard": "https://huggingface.co/rhasspy/piper-voices/blob/5041a7a49ae5b3a0f30e6837769eb03fdbb231bd/cs/cs_CZ/jirka/medium/MODEL_CARD",
+    "files": [
+      {
+        "file": "cs_CZ-jirka-medium.onnx",
+        "bytes": 63201294,
+        "sha": "cbd5c900acacc8e8cbecd64347abb8de39c00a9d3104bed06fee92e4f319efc8",
+        "url": "https://huggingface.co/rhasspy/piper-voices/resolve/5041a7a49ae5b3a0f30e6837769eb03fdbb231bd/cs/cs_CZ/jirka/medium/cs_CZ-jirka-medium.onnx"
+      },
+      {
+        "file": "cs_CZ-jirka-medium.MODEL_CARD",
+        "bytes": 282,
+        "sha": "b8043c32e43496b109d49bbc28290e570c064a4ed949962a71a5ff6b2ad647e7",
+        "url": "https://huggingface.co/rhasspy/piper-voices/resolve/5041a7a49ae5b3a0f30e6837769eb03fdbb231bd/cs/cs_CZ/jirka/medium/MODEL_CARD"
+      },
+      {
+        "file": "cs_CZ-jirka-medium.onnx.json",
+        "bytes": 5025,
+        "sha": "fb38b1799b7354808227c065efa97b1ffa2b0cde59505babb56a36d35af9c637",
+        "url": "https://huggingface.co/rhasspy/piper-voices/resolve/5041a7a49ae5b3a0f30e6837769eb03fdbb231bd/cs/cs_CZ/jirka/medium/cs_CZ-jirka-medium.onnx.json"
+      }
+    ]
+  }
+}
+};
 export async function downloadVerified(item, destination, { fetcher = fetch, onProgress, quiet = false } = {}) {
   fs.mkdirSync(path.dirname(destination), { recursive: true, mode: 0o700 });
   if (usable(destination)) {

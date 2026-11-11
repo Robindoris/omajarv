@@ -1,0 +1,12 @@
+import assert from 'node:assert/strict';
+import {createAgentActivity} from '../server/lib/agent-activity.mjs';
+let time=100;const activity=createAgentActivity({now:()=>time});
+assert.equal(activity.snapshot(),null);
+activity.begin('kanban',{id:'task-1',title:'Build fixture',notes:'Private detail'});
+assert.deepEqual(activity.snapshot().task,{id:'task-1',title:'Build fixture'});
+assert.equal(activity.snapshot().phase,'thinking');assert.equal(activity.phase('working'),true);assert.equal(activity.phase('working'),false);
+activity.phase('responding');assert.equal(activity.snapshot().phase,'responding');
+activity.finish('completed');assert.equal(activity.snapshot().phase,'completed');assert.equal(activity.phase('working'),false);
+time+=8001;assert.equal(activity.snapshot(),null);
+activity.begin('chat');activity.finish('interrupted');assert.equal(activity.snapshot().task,null);assert.equal(activity.snapshot().phase,'interrupted');
+console.log('PASS: actual execution phases, minimal task metadata, terminal expiry and interruption.');

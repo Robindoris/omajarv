@@ -1,0 +1,17 @@
+import fs from 'node:fs';
+import {spawn} from 'node:child_process';
+import {randomBytes} from 'node:crypto';
+import path from 'node:path';
+const root=path.resolve(import.meta.dirname,'..');
+const {Pool}=await import('pg');
+if(!process.env.JARVIS_TEST_DATABASE_ENV)throw new Error('Set JARVIS_TEST_DATABASE_ENV to a private project connection file.');
+const raw=fs.readFileSync(process.env.JARVIS_TEST_DATABASE_ENV,'utf8').match(/^DATABASE_URL=(.+)$/m)[1];
+const url=new URL(JSON.parse(raw));url.searchParams.delete('schema');
+const schema='test_api_'+randomBytes(8).toString('hex');
+const child=spawn(process.execPath,['tests/integration.mjs'],{cwd:root,env:{...process.env,JARVIS_DATABASE_URL:url.toString(),JARVIS_DATABASE_SCHEMA:schema},stdio:['ignore','pipe','pipe']});
+let output='';child.stdout.on('data',b=>output+=b);child.stderr.on('data',b=>output+=b);
+const code=await new Promise(resolve=>child.on('exit',resolve));
+const pool=new Pool({connectionString:url.toString()});await pool.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);await pool.end();
+console.log(code===0?'PASS: PostgreSQL-backed authenticated API/desktop integration with fake agents.':'FAIL: PostgreSQL-backed API integration (inspect locally).');
+if(code!==0)console.log(output.replaceAll(url.toString(),'[private]'));
+process.exitCode=code;

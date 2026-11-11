@@ -32,7 +32,16 @@ OpenCode and Hermes support private stdin prompts and conversation sessions.
 OpenCode must support `run --standalone --format json`; Hermes must support
 `hermes acp` with session loading and cancellation. Upgrade older CLIs if these options
 are unavailable. Other agents remain disabled until their private transport is
-verified. You can override the Omarchy default with `"agent": "opencode"` (or
+verified. JARVIS follows changes to Omarchy’s selected agent without a restart.
+With no selected agent it uses OpenCode and a free model discovered from its catalog.
+An explicit exhausted-credit error also switches to a free OpenCode model for this
+bridge process, provided no reply or tool execution has started. Other failures
+remain errors. Changing the system agent clears this runtime fallback; restarting
+the bridge retries the selected agent. OpenCode must be installed and list a free
+model; JARVIS does not install it automatically. The web header offers OpenCode’s
+model picker; Hermes uses its configured model (`hermes model`).
+
+You can override the Omarchy default with `"agent": "opencode"` (or
 `"hermes"`, `"codex"`, `"claude"`) in the JARVIS configuration.
 
 OpenCode retains its configured permission rules. Hermes permission requests are
@@ -415,3 +424,11 @@ playback report ready. Missing models or runtimes keep text as the default. Setu
 completion updates the default without closing Settings. Explicit chat/voice choices
 remain selected for that page session; readiness checks never open a microphone or
 start recording.
+
+Start development with `npm run dev`; restart with `npm run dev:restart`.
+`npm run dev:status` and `npm run dev:stop` inspect/stop only this managed dev
+instance. The launcher builds current frontend assets and preserves config, tokens,
+models and conversations in Git-ignored `.jarvis-dev/`. It recreates the temporary
+socket alias on startup, so an existing private dev tailnet mapping still works
+after reboot. It migrates the previous temporary dev home once and leaves a recovery
+copy. It does not change the installed service or automatically enable networking.

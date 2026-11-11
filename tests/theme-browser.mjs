@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import { spawn,spawnSync } from 'node:child_process';
 import { once } from 'node:events';
 import { generateKeyPairSync, privateDecrypt, constants } from 'node:crypto';
+import {openPlanner} from '../server/lib/planner.mjs';
 import {createKanban} from '../server/lib/kanban.mjs';
 import { buildTheme, themeStyles } from '../server/lib/theme.mjs';
 const cameraJPEG=spawnSync('ffmpeg',['-hide_banner','-loglevel','error','-f','lavfi','-i','color=c=blue:s=160x120','-frames:v','1','-f','image2pipe','-c:v','mjpeg','pipe:1']).stdout;
@@ -20,19 +21,22 @@ const light=buildTheme({mode:'light',background:'#fafafa',foreground:'#151515',a
 const boardFixtureDir=fs.mkdtempSync(path.join(os.tmpdir(),'jarvis-browser-board-'));
 const fixtureStore=createKanban(boardFixtureDir,{now:()=>new Date(2026,0,2,23,30)});
 let fixtureBoard=fixtureStore.view(),dropBoardResponse=false;
+const fixturePlanner=await openPlanner(boardFixtureDir,{connectionString:''});
 let fixtureVoiceSettings={settings:{stt:{engine:'auto',model:'base.en',modelPath:'',language:'en',serverPort:8178},tts:{voice:'en_US-ljspeech-medium',modelPath:'',speed:1},maxRecordingSec:120},models:{whisper:[{name:'small',path:'/fixture/ggml-small.bin'}],piper:[{name:'fixture-voice',path:'/fixture/voice.onnx'}]},status:{stt:{ready:true},tts:{ready:false}}};
 let failVoiceSave=false;
 let setupPosts=0,setupTicks=0;
-let fixtureSetup={job:{state:'idle',received:0,total:8,file:'',error:''},missing:{whisper:true,piper:true},runtime:{whisper:true,piper:true,ffmpeg:true},models:[{id:'whisper',name:'Whisper base.en',bytes:4,needed:true,source:'Fixture source',terms:'Fixture terms'},{id:'piper',name:'Piper LJ Speech medium',bytes:4,needed:true,source:'Fixture source',terms:'Fixture terms'}]};
+let fixtureSetup={choices:[{id:'lightweight',name:'Lightweight tiny.en',bytes:4,description:'Fast English recognition',installed:false},{id:'multilingualHeavy',name:'Heavy multilingual small',bytes:8,description:'Multilingual recognition',installed:false}],job:{state:'idle',received:0,total:8,file:'',error:''},missing:{whisper:true,piper:true},runtime:{whisper:true,piper:true,ffmpeg:true},models:[{id:'whisper',name:'Whisper base.en',bytes:4,needed:true,source:'Fixture source',terms:'Fixture terms'},{id:'piper',name:'Piper LJ Speech medium',bytes:4,needed:true,source:'Fixture source',terms:'Fixture terms'}]};
 let fixtureSTTReady=true,fixtureTTSReady=true;
 let themeReads=0;
+let fixtureAgent='codex',fixtureAgentModel='',fixtureActivity=null;
+const fixtureBusy=()=>!!fixtureActivity&&['thinking','working','responding'].includes(fixtureActivity.phase);
 let savedPersonality=false;
 let sudoPending=false, sudoApproved=false;
 let failSudoPoll=false;
 const sudoKeys=generateKeyPairSync('rsa',{modulusLength:3072});
 const sudoPublicKey=sudoKeys.publicKey.export({type:'spki',format:'pem'}).toString();
 let fixtureProfile={assistantName:'Nova',userName:'Alex',personality:'Be friendly.',revision:0,stage:'complete'};
-const server=http.createServer((req,res)=>{
+const server=http.createServer(async(req,res)=>{
 const url=new URL(req.url,'http://localhost');
 if(url.pathname.startsWith('/api/')){
  assert.equal(url.searchParams.has('k'),false,'API URLs must not carry the bearer token');
@@ -42,6 +46,11 @@ res.setHeader('cache-control','no-store');
 if(url.pathname==='/test-sudo/start'){sudoPending=true;return res.end('ok');}
 if(url.pathname==='/test-sudo/fail-once'){failSudoPoll=true;return res.end('ok');}
 if(url.pathname==='/test-sudo/end'){sudoPending=false;return res.end('ok');}
+if(['/api/calendar','/api/notifications'].includes(url.pathname)){
+ res.setHeader('content-type','application/json');
+ if(req.method==='GET'){await fixturePlanner.tick(fixtureBoard.tasks);return res.end(JSON.stringify(url.pathname==='/api/calendar'?await fixturePlanner.view(url.searchParams.has('from')?{from:Number(url.searchParams.get('from')),to:Number(url.searchParams.get('to'))}:undefined):await fixturePlanner.notifications()));}
+ let body='';req.on('data',b=>body+=b);req.on('end',async()=>{try{const input=JSON.parse(body);const result=url.pathname==='/api/calendar'?await fixturePlanner.update(input):await fixturePlanner.notify(input);await fixturePlanner.tick(fixtureBoard.tasks);res.end(JSON.stringify(result));}catch(e){res.writeHead(e.status||400);res.end(JSON.stringify({error:e.message}));}});return;
+}
 if(url.pathname==='/api/sudo/pending'){
  if(failSudoPoll){failSudoPoll=false;res.writeHead(503);return res.end();}
  res.setHeader('content-type','application/json');
@@ -61,7 +70,7 @@ if(url.pathname==='/api/sudo/reply'){
 if(url.pathname==='/api/conversations'){res.setHeader('content-type','application/json');return res.end(JSON.stringify({conversations:[{id:'saved-fixture',title:'Earlier chat',agent:'codex',count:2,at:1}]}));}
 if(url.pathname==='/api/voice-setup'){
  res.setHeader('content-type','application/json');
- if(req.method==='POST'){let body='';req.on('data',c=>body+=c);req.on('end',()=>{assert.deepEqual(JSON.parse(body),{consent:true});setupPosts++;setupTicks=0;fixtureSetup.job={state:'downloading',received:2,total:8,file:'fixture.bin',error:''};res.writeHead(202);res.end(JSON.stringify(fixtureSetup));});return;}
+ if(req.method==='POST'){let body='';req.on('data',c=>body+=c);req.on('end',()=>{assert.deepEqual(JSON.parse(body),{consent:true,whisperSize:'multilingualHeavy'});setupPosts++;setupTicks=0;fixtureSetup.job={state:'downloading',received:2,total:8,file:'fixture.bin',error:''};res.writeHead(202);res.end(JSON.stringify(fixtureSetup));});return;}
  if(fixtureSetup.job.state==='downloading'&&++setupTicks>=2){fixtureSetup.job={state:'complete',received:8,total:8,file:'',error:''};fixtureSetup.models=fixtureSetup.models.map(m=>({...m,needed:false}));}
  return res.end(JSON.stringify(fixtureSetup));
 }
@@ -96,8 +105,16 @@ if(url.pathname==='/api/kanban'){
 }
 if(url.pathname==='/api/theme'){res.setHeader('content-type','application/json');return res.end(JSON.stringify(++themeReads<2?dark:light));}
 if(url.pathname==='/theme.css'){res.setHeader('content-type','text/css');return res.end(themeStyles(dark));}
-if(url.pathname==='/api/status'){res.setHeader('content-type','application/json');return res.end(JSON.stringify({agent:{label:'Codex'},session:{turns:0},stt:{ready:fixtureSTTReady},tts:{ready:fixtureTTSReady}}));}
-if(url.pathname==='/api/history'){res.setHeader('content-type','application/json');return res.end('{"messages":[],"busy":false}');}
+if(url.pathname==='/test-activity'){const phase=url.searchParams.get('phase');fixtureActivity=phase==='none'?null:{source:'kanban',phase,task:{id:'activity-fixture',title:'Build activity fixture'},startedAt:Date.now()};return res.end('ok');}
+if(url.pathname==='/test-agent'){fixtureAgent=url.searchParams.get('agent');return res.end('ok');}
+if(url.pathname==='/api/models'||url.pathname==='/api/agent/model'){
+ res.setHeader('content-type','application/json');
+ const listing=()=>JSON.stringify({agent:fixtureAgent,listed:fixtureAgent==='opencode',models:[{id:'opencode/fixture-free',free:true}],note:fixtureAgent==='hermes'?"Run 'hermes model' in a terminal to change it.":''});
+ if(req.method==='POST'){let body='';req.on('data',c=>body+=c);req.on('end',()=>{const data=JSON.parse(body);assert.equal(data.agent,fixtureAgent);fixtureAgentModel=data.model;res.end(listing());});return;}
+ return res.end(listing());
+}
+if(url.pathname==='/api/status'){res.setHeader('content-type','application/json');return res.end(JSON.stringify({agent:{id:fixtureAgent,label:fixtureAgent==='codex'?'Codex':fixtureAgent==='opencode'?'OpenCode':'Hermes',modelSelectable:fixtureAgent!=='codex',model:fixtureAgentModel},chatBusy:fixtureBusy(),activity:fixtureActivity,session:{turns:0},stt:{ready:fixtureSTTReady},tts:{ready:fixtureTTSReady}}));}
+if(url.pathname==='/api/history'){res.setHeader('content-type','application/json');return res.end(JSON.stringify({agent:fixtureAgent,messages:[],busy:fixtureBusy(),activity:fixtureActivity}));}
 if(url.pathname==='/api/personality'){
  res.setHeader('content-type','application/json');
  if(req.method==='POST'){
@@ -266,7 +283,7 @@ for(const width of [390,820,1280]) {
  assert.deepEqual(JSON.parse(gestures.result.value),{follows:width<=900,opened:width<=900,closed:true,scrollSafe:true,centerSafe:true,shortSafe:true,cancelSafe:true},'Sidebar gestures at '+width+'px');
 }
 await call('Emulation.setDeviceMetricsOverride',{width:viewport.width,height:viewport.height,deviceScaleFactor:1,mobile:true});
-await call('Runtime.evaluate',{expression:"document.getElementById('sudoDialog').close(); document.body.dataset.sidebar='open'; document.querySelector('#sidebar-extra .sidebar-nav-button').click()"});
+await call('Runtime.evaluate',{expression:"document.getElementById('sudoDialog').close(); document.body.dataset.sidebar='open'; Array.from(document.querySelectorAll('#sidebar-extra .sidebar-nav-button')).find(b=>b.textContent==='Kanban').click()"});
 const sidebarLayout=await call('Runtime.evaluate',{expression:"JSON.stringify({open:!document.getElementById('kanban-panel').hidden,fits:document.getElementById('kanban-panel').getBoundingClientRect().right<=innerWidth,history:document.getElementById('conversation-list').textContent.includes('Earlier chat')})",returnByValue:true});
 assert.deepEqual(JSON.parse(sidebarLayout.result.value),{open:true,fits:true,history:true});
 await call('Runtime.evaluate',{expression:"Array.from(document.querySelectorAll('#sidebar-extra button')).find(button=>button.textContent==='Settings').click()"});
@@ -274,6 +291,20 @@ async function settingsEval(expression){
  const tick=new Promise(resolve=>{const listener=event=>{if(JSON.parse(event.data).method==='Emulation.virtualTimeBudgetExpired'){socket.removeEventListener('message',listener);resolve();}};socket.addEventListener('message',listener);});
  await call('Emulation.setVirtualTimePolicy',{policy:'pauseIfNetworkFetchesPending',budget:500});await tick;
  return (await call('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true})).result.value;
+}
+
+// Switch the system agent without reloading the page and use the actual model API.
+for(const agent of ['opencode','hermes','codex']){
+ await settingsEval(`fetch('/test-agent?agent=${agent}').then(()=>document.dispatchEvent(new Event('visibilitychange')))`);
+ for(let i=0;i<10;i++){if(await settingsEval(`document.getElementById('agentName').textContent===${JSON.stringify(agent==='opencode'?'OPENCODE':agent.toUpperCase())}`))break;}
+ assert.equal(await settingsEval("document.getElementById('agentName').textContent"),agent==='opencode'?'OPENCODE':agent.toUpperCase());
+ if(agent==='opencode'){
+  for(let i=0;i<10;i++){if(await settingsEval("!!document.querySelector('[aria-label=\"Agent model\"]')"))break;}
+  await settingsEval(`(()=>{const select=document.querySelector('[aria-label="Agent model"]');select.value='opencode/fixture-free';select.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+  await settingsEval('true');assert.equal(fixtureAgentModel,'opencode/fixture-free');
+  assert.equal(await settingsEval(`(()=>{const select=document.querySelector('[aria-label="Agent model"]').getBoundingClientRect();return select.left>=0&&select.right<=innerWidth;})()`),true,'Model picker must fit mobile headers');
+ }
+ if(agent==='hermes')assert.equal(await settingsEval("document.querySelector('.agent-model-note').textContent.includes('hermes model')"),true);
 }
 
 // Exercise real UI mutations rather than checking only whether the board is visible.
@@ -289,6 +320,23 @@ assert.equal(await settingsEval("document.querySelector('.kanban-error').textCon
 await settingsEval(`(()=>{const input=document.querySelector('#kanban-panel .kb-task select');input.value='doing';input.dispatchEvent(new Event('change',{bubbles:true}));})()`);
 await settingsEval("true");assert.equal(fixtureBoard.tasks[0].status,'doing');
 
+console.log('Checking calendar and notifications at '+viewport.width+'px');
+await settingsEval("window.jarvisWorkspace('calendar')");await settingsEval('true');
+await settingsEval("Array.from(document.querySelectorAll('#calendar-panel button')).find(b=>b.textContent.includes('New event')).click()");
+assert.equal(await settingsEval("!!document.querySelector('.planner-dialog[open]')"),true);
+await settingsEval(`(()=>{const f=document.querySelector('.planner-dialog form');f.elements.title.value='Calendar browser fixture ${viewport.width}';f.elements.notes.value='Calendar description';const date=new Date();date.setHours(12,0,0,0);const local=d=>new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,16);f.elements.startAt.value=local(date);f.elements.endAt.value=local(new Date(date.getTime()+3600000));f.requestSubmit();})()`);
+await settingsEval('true');assert.ok((await fixturePlanner.view()).events.some(e=>e.title==='Calendar browser fixture '+viewport.width));
+assert.equal(await settingsEval("!!document.querySelector('.planner-dialog[open]')"),false);
+assert.equal(await settingsEval("document.querySelector('#calendar-panel').getBoundingClientRect().right<=innerWidth"),true);
+const calendarShot=await call('Page.captureScreenshot');fs.writeFileSync(path.join(screenshotRoot,'jarvis-calendar-'+viewport.width+'.png'),Buffer.from(calendarShot.data,'base64'));
+const cal=await fixturePlanner.view();await fixturePlanner.update({revision:cal.revision,requestId:'browser-reminder-'+viewport.width,action:'create',title:'Reminder browser fixture',notes:'Synthetic reminder',startAt:new Date(Date.now()+3600000).toISOString(),endAt:new Date(Date.now()+7200000).toISOString(),timeZone:'Europe/Bratislava',reminderMinutes:1440,recurrence:'none'});await fixturePlanner.tick([]);
+await settingsEval("window.jarvisWorkspace('notifications')");await settingsEval('true');
+// Notification inbox polls independently of the active workspace.
+for(let i=0;i<25;i++){if(await settingsEval("document.querySelector('#notifications-panel').textContent.includes('Reminder browser fixture')"))break;}
+assert.equal(await settingsEval("document.querySelector('#notifications-panel').textContent.includes('Reminder browser fixture')"),true);
+assert.equal(await settingsEval("document.querySelector('#notifications-panel').getBoundingClientRect().right<=innerWidth"),true);
+const inboxShot=await call('Page.captureScreenshot');fs.writeFileSync(path.join(screenshotRoot,'jarvis-notifications-'+viewport.width+'.png'),Buffer.from(inboxShot.data,'base64'));
+await settingsEval("window.jarvisWorkspace('kanban')");
 console.log('Checking Kanban keyboard and drag at '+viewport.width+'px');
 // Keyboard editing and moves, notes/priority/date/status filters and host-calendar highlights.
 if(viewport.width<768)await settingsEval("document.querySelector('.kb-filter-toggle').click()");
@@ -364,6 +412,15 @@ assert.equal(await settingsEval("document.querySelector('.settings-message').tex
 await settingsEval("window.jarvisWorkspace('conversation');window.jarvisWorkspace('settings')");
 await new Promise(resolve=>setTimeout(resolve,100));
 assert.equal(await settingsEval("document.querySelector('[aria-label=\"Installed Whisper model\"]').value"),'/fixture/ggml-small.bin','Saved model must reload');
+await settingsEval(`(function(){const input=document.querySelector('[aria-label="Voice persona"]');input.value='calm';input.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+await new Promise(resolve=>setTimeout(resolve,30));
+assert.equal(await settingsEval("document.querySelector('[aria-label=\"Speaking speed\"]').value"),'0.85','Persona updates speaking pace');
+await settingsEval("document.querySelector('#settings-panel form').requestSubmit()");
+for(let i=0;i<100;i++){if(fixtureVoiceSettings.settings.tts.speed===0.85)break;await new Promise(resolve=>setTimeout(resolve,30));}
+assert.equal(fixtureVoiceSettings.settings.tts.speed,0.85,'Persona pace is saved');
+await settingsEval("window.jarvisWorkspace('conversation');window.jarvisWorkspace('settings')");
+await new Promise(resolve=>setTimeout(resolve,100));
+assert.equal(await settingsEval("document.querySelector('[aria-label=\"Voice persona\"]').value"),'calm','Saved persona reloads');
 failVoiceSave=true;
 await settingsEval(`(function(){const input=document.querySelector('[aria-label="Installed Piper voice"]');input.value='/fixture/voice.onnx';input.dispatchEvent(new Event('change',{bubbles:true}));})()`);
 await new Promise(resolve=>setTimeout(resolve,30));
@@ -375,12 +432,21 @@ await settingsEval("Array.from(document.querySelectorAll('#settings-panel button
 await new Promise(resolve=>setTimeout(resolve,30));
 assert.equal(await settingsEval("document.querySelector('[aria-label=\"Installed Piper voice\"]').value"),'');
 
+// Check the rendered cascade: legacy button rules must not erase filled-button contrast.
+assert.deepEqual(await settingsEval(`(()=>{
+ const probe=document.createElement('span');probe.style.color='var(--bg)';document.body.append(probe);
+ const expected=getComputedStyle(probe).color;probe.remove();
+ return Array.from(document.querySelectorAll('.button-primary')).filter(button=>getComputedStyle(button).color!==expected).map(button=>button.textContent);
+})()`),[],'Filled buttons must use the background color for text');
+
 const initialSetupPosts=setupPosts;
 assert.equal(await settingsEval("document.querySelector('.setup-steps [aria-current=step]').textContent.includes('Welcome')"),true);
 assert.equal(setupPosts,initialSetupPosts,'Opening Settings must not download');
 await settingsEval("Array.from(document.querySelectorAll('.voice-onboarding button')).find(b=>b.textContent.includes('Set up voice')).click()");
 assert.equal(await settingsEval("document.querySelector('.setup-steps [aria-current=step]').textContent.includes('Models')"),true);
-await settingsEval("Array.from(document.querySelectorAll('.voice-onboarding button')).find(b=>b.textContent.includes('Download missing models')).click()");
+assert.equal(await settingsEval("!!document.querySelector('[aria-label=\"Speech recognition model size\"]')"),true);
+await settingsEval(`(()=>{const select=document.querySelector('[aria-label="Speech recognition model size"]');select.value='multilingualHeavy';select.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+await settingsEval("Array.from(document.querySelectorAll('.voice-onboarding button')).find(b=>b.textContent.includes('Download / use selected model')).click()");
 for(let i=0;i<10&&setupPosts===initialSetupPosts;i++)await settingsEval('true');
 assert.equal(setupPosts,initialSetupPosts+1);
 for(let i=0;i<10;i++){if(await settingsEval("document.querySelector('.voice-onboarding').textContent.includes('Model setup complete')"))break;}
@@ -436,6 +502,35 @@ await cameraWait("document.querySelector('.camera-settings').textContent.include
 assert.equal(cameraFixture.configured,false);assert.equal(cameraFixture.source,'device');
 assert.equal(await cameraEval("document.querySelector('.camera-settings select').value"),'device');
 assert.equal(await cameraEval("Array.from(document.querySelectorAll('.camera-actions button')).find(b=>b.textContent==='Test camera audio').disabled"),true,'Forgotten cameras cannot be tested');
+// Execution activity is shared across pages and controls the existing core.
+await cameraEval("window.jarvisWorkspace('kanban')");
+await cameraWait("document.body.dataset.workspace==='kanban' && !document.getElementById('kanban-panel').hidden");
+const activityBoardTop=await cameraEval("document.getElementById('kanban-panel').getBoundingClientRect().top");
+for(const [phase,mode] of [['thinking','thinking'],['working','working'],['responding','responding'],['completed','idle'],['error','error'],['interrupted','idle'],['none','idle']]){
+ await cameraEval(`fetch('/test-activity?phase=${phase}').then(()=>document.dispatchEvent(new Event('visibilitychange')))`);
+ await cameraWait(`document.body.dataset.coreState==='${mode}' && document.getElementById('agentActivity').dataset.visible==='${phase!=='none'}'`);
+ assert.equal(await cameraEval("document.getElementById('kanban-panel').getBoundingClientRect().top"),activityBoardTop,'Activity must not shift the board');
+ if(phase!=='none'){
+  assert.equal(await cameraEval("document.getElementById('activityTitle').textContent"),'Kanban · Build activity fixture');
+  assert.equal(await cameraEval("getComputedStyle(document.querySelector('.stage')).display==='none'"),false,'Kanban execution reveals the shared core');
+  assert.equal(await cameraEval("document.querySelector('.reactor-wrap').getBoundingClientRect().height>=100"),true);
+  assert.equal(await cameraEval("document.querySelector('.app').scrollWidth<=innerWidth"),true);
+ }
+ if(phase==='working'){
+  const shot=await call('Page.captureScreenshot');fs.writeFileSync(path.join(screenshotRoot,'jarvis-kanban-activity-'+viewport.width+'.png'),Buffer.from(shot.data,'base64'));
+ }
+}
+
+// Repeated entry/exit and long titles must preserve the activity rail.
+for(const visible of [true,false,true,false]){
+ await cameraEval(`document.getElementById('agentActivity').dataset.visible='${visible}';document.getElementById('activityTitle').textContent='Long activity title '.repeat(40)`);
+ assert.equal(await cameraEval("document.getElementById('kanban-panel').getBoundingClientRect().top"),activityBoardTop);
+ assert.equal(await cameraEval("document.querySelector('.app').scrollWidth<=innerWidth"),true);
+}
+await call('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'reduce'}]});
+assert.equal(await cameraEval("getComputedStyle(document.getElementById('agentActivity')).transitionDuration"),'0s');
+assert.equal(await cameraEval("getComputedStyle(document.getElementById('agentActivity')).transform"),'none');
+await call('Emulation.setEmulatedMedia',{features:[]});
 // Reset the fake profile for the next viewport without invoking browser confirmations.
 cameraFixture={configured:false,enabled:false,source:'device',active:0};
 await call('Emulation.setVirtualTimePolicy',{policy:'pause'});
@@ -466,6 +561,18 @@ if(process.env.JARVIS_TEST_WEBGL){
   const released=await call('Runtime.evaluate',{expression:"document.getElementById('reactor').classList.contains('orbit-dragging')",returnByValue:true});
   assert.equal(released.result.value,false,'Releasing the core clears capture');
  }
+ const corner=JSON.parse((await call('Runtime.evaluate',{expression:"JSON.stringify((()=>{const r=document.getElementById('reactor').getBoundingClientRect();return {x:r.left+5,y:r.top+5};})())",returnByValue:true})).result.value);
+ if(viewport.width<900){
+  await call('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[corner]});
+  await call('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:corner.x+25,y:corner.y+20}]});
+  await call('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+ }else{
+  await call('Input.dispatchMouseEvent',{type:'mousePressed',...corner,button:'left',clickCount:1});
+  await call('Input.dispatchMouseEvent',{type:'mouseMoved',x:corner.x+25,y:corner.y+20,button:'left',buttons:1});
+  await call('Input.dispatchMouseEvent',{type:'mouseReleased',x:corner.x+25,y:corner.y+20,button:'left',clickCount:1});
+ }
+ assert.equal((await call('Runtime.evaluate',{expression:"document.getElementById('reactor').dataset.orbitGesture",returnByValue:true})).result.value,'camera');
+ assert.ok((await call('Runtime.evaluate',{expression:"document.getElementById('reactor').dataset.cameraOrbit",returnByValue:true})).result.value);
 }
 const voiceScreenshot=await call('Page.captureScreenshot');
 fs.writeFileSync(path.join(screenshotRoot,'jarvis-phone-voice-'+viewport.width+'.png'),Buffer.from(voiceScreenshot.data,'base64'));
@@ -541,4 +648,4 @@ assert.equal(cameraStreams,0,'Default view never opens a camera stream');
 }
 }
 console.log('PASS: desktop/mobile layout, Kanban edits/filters/local dates, touch and keyboard moves, safe retries, confirmed restore, onboarding, theme and sudo dialogs.');
-} finally {server.closeAllConnections();server.close();fs.rmSync(boardFixtureDir,{recursive:true,force:true});fs.rmSync(profile,{recursive:true,force:true,maxRetries:10,retryDelay:100});}
+} finally {await fixturePlanner.close();server.closeAllConnections();server.close();fs.rmSync(boardFixtureDir,{recursive:true,force:true});fs.rmSync(profile,{recursive:true,force:true,maxRetries:10,retryDelay:100});}

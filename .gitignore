@@ -16,3 +16,6 @@ sessions.json
 history.json
 *.log
 node_modules/
+
+# Private development runtime (config, history, credentials, models)
+.jarvis-dev/

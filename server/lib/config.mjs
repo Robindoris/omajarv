@@ -29,7 +29,7 @@ export const paths = {
   serveSocket: path.join(HOME, ".local", "state", "omarchy-jarvis", "serve.sock"),
   sessionsFile: path.join(HOME, ".local", "state", "omarchy-jarvis", "sessions.json"),
   logFile: path.join(HOME, ".local", "state", "omarchy-jarvis", "server.log"),
-  omarchyAgentFile: path.join(HOME, ".config", "omarchy", "defaults", "agent"),
+  omarchyAgentFile: process.env.JARVIS_OMARCHY_AGENT_FILE || path.join(HOME, ".config", "omarchy", "defaults", "agent"),
 };
 
 export const defaults = {
@@ -159,5 +159,5 @@ export function omarchyDefaultAgent() {
 }
 
 export function resolveAgent(config) {
-  return (config.agent || omarchyDefaultAgent() || "codex").trim();
+  return (config.agent || omarchyDefaultAgent() || "opencode").trim();
 }

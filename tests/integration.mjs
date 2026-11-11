@@ -200,7 +200,13 @@ const savedChats=JSON.parse((await api('/api/conversations')).text).conversation
 assert.ok(savedChats.some(chat=>!chat.active),'Starting a new chat must preserve old conversations');
 const oldChat=JSON.parse((await api('/api/conversations?id='+encodeURIComponent(savedChats.find(chat=>!chat.active).id))).text);
 assert.ok(oldChat.messages.length>0);
-assert.equal(fs.statSync(path.join(state,'conversations.json')).mode & 0o777,0o600);
+if(!process.env.JARVIS_DATABASE_URL)assert.equal(fs.statSync(path.join(state,'conversations.json')).mode & 0o777,0o600);
+else {
+  assert.ok(oldChat.messages.every(message=>message.id),'PostgreSQL messages retain stable IDs');
+  const snapshots=fs.readdirSync(path.join(state,'memory-backups'));
+  assert.ok(snapshots.length>0);
+  assert.equal(fs.statSync(path.join(state,'memory-backups',snapshots[0])).mode & 0o777,0o600);
+}
 assert.equal((await api('/api/conversations',undefined,false)).status,401);
 
 assert.equal(fs.existsSync(metadata[0].path),false);
@@ -232,7 +238,7 @@ assert.ok(!failure.text.includes(promptMarker));
 assert.ok(!failure.text.includes('PRIVATE_REQUEST_AUDIT_FIXTURE'));
 assert.ok(!logs.includes(promptMarker));
 assert.ok(!logs.includes('PRIVATE_REQUEST_AUDIT_FIXTURE'));
-const savedHistory=JSON.parse(fs.readFileSync(path.join(state,'history.json'),'utf8'));
+const savedHistory=process.env.JARVIS_DATABASE_URL?JSON.parse((await api('/api/history')).text).messages:JSON.parse(fs.readFileSync(path.join(state,'history.json'),'utf8'));
 assert.ok(!JSON.stringify(savedHistory).includes(promptMarker));
 assert.ok(!('personality' in JSON.parse((await api('/api/history')).text).profile));
 const nextProfile=JSON.parse((await api('/api/personality')).text);

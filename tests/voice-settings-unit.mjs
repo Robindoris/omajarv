@@ -8,7 +8,7 @@ const previousHome = process.env.HOME;
 process.env.HOME = home;
 try {
   const { defaults } = await import('../server/lib/config.mjs');
-  const { updateVoiceSettings } = await import('../server/lib/voice-settings.mjs');
+  const { updateVoiceSettings, voiceSettingsView } = await import('../server/lib/voice-settings.mjs');
   const config = structuredClone({ ...defaults, unrelated: { secret: 'PRIVATE_FIXTURE' } });
   let writes = 0;
   let invalidations = 0;
@@ -51,6 +51,20 @@ try {
   updateVoiceSettings(config, { stt: { modelPath: whisper } }, options);
   assert.equal(config.stt.modelPath, whisper);
   assert.equal(invalidations, beforeInvalidations + 1);
+  const voiceDir = path.join(home, '.local/share/omarchy-jarvis/models/piper');
+  fs.mkdirSync(voiceDir, { recursive: true });
+  const voice = path.join(voiceDir, config.tts.voice + '.onnx');
+  fs.writeFileSync(voice, 'fixture');
+  fs.writeFileSync(voice + '.json', '{}');
+  assert.equal(voiceSettingsView(config).models.piper.find(model => model.path === voice)?.active, true, 'default-location voice is selected without an explicit path');
+  const alternate = path.join(voiceDir, 'en_US-test-medium.onnx');
+  fs.writeFileSync(alternate, 'fixture');
+  assert.ok(!voiceSettingsView(config).models.piper.some(model => model.path === alternate), 'incomplete voices are not selectable');
+  fs.writeFileSync(alternate + '.json', '{}');
+  const selected = updateVoiceSettings(config, { tts: { voice: 'en_US-test-medium', modelPath: alternate } }, options);
+  assert.equal(selected.models.piper.find(model => model.active)?.path, alternate);
+  assert.equal(selected.settings.tts.modelPath, alternate);
+  assert.equal(selected.models.piper.find(model => model.path === voice)?.active, false);
   console.log('PASS: voice settings persist-before-runtime transaction, write-failure rollback, busy conflicts and precise Whisper invalidation.');
 } finally {
   if (previousHome === undefined) delete process.env.HOME; else process.env.HOME = previousHome;

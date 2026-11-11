@@ -14,8 +14,8 @@
   <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
   <link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png">
   <link rel="apple-touch-icon" sizes="192x192" href="/icon-192.png">
-  <link rel="stylesheet" href="jarvis.css?v=dashboard-2d90d5a28e19">
-  <link rel="stylesheet" href="dashboard.css?v=dashboard-2d90d5a28e19">
+  <link rel="stylesheet" href="jarvis.css?v=dashboard-1dfebff09c13">
+  <link rel="stylesheet" href="dashboard.css?v=dashboard-1dfebff09c13">
   <link rel="stylesheet" href="/theme.css">
 </head>
 <body data-state="boot" data-view="chat">
@@ -53,8 +53,9 @@
       <div class="hud-right">
         <div class="agent" title="Connected agent">
           <span class="agent-label">AGENT</span>
-          <span class="agent-name" id="agentName">CODEX</span>
+          <span class="agent-name" id="agentName">CONNECTING</span>
         </div>
+        <div id="agent-model-picker"></div>
         <div class="pill" id="statusPill" data-state="boot" role="status" aria-live="polite" aria-atomic="true">
           <span class="dot" aria-hidden="true"></span>
           <span id="statusText">BOOT</span>
@@ -90,16 +91,21 @@
       </form>
     </dialog>
     <div class="dashboard-heading"><div><span class="eyebrow">YOUR PERSONAL INTELLIGENCE</span><h1>At your command.</h1><p>A clear space to think, build, and get things done.</p></div><span class="workspace-tag">WORKSPACE / 02</span></div>
+    <section id="calendar-panel" hidden aria-label="Calendar"></section>
+    <section id="notifications-panel" hidden aria-label="Notifications"></section>
     <section id="kanban-panel" hidden aria-label="Kanban board"></section>
     <section id="archive-panel" hidden aria-label="Saved conversation"></section>
     <section id="settings-panel" hidden aria-label="Voice settings"></section>
+    <div class="agent-activity" id="agentActivity" role="status" aria-live="polite" aria-atomic="true" data-visible="false" aria-hidden="true">
+      <span class="activity-indicator" aria-hidden="true"></span><div><strong id="activityTitle"></strong><span id="activityPhase"></span></div>
+    </div>
     <main class="stage">
       <div class="reactor-wrap">
         <div class="core-caption voice-ticker" id="voiceTicker" role="status" aria-live="polite" aria-atomic="true" hidden>
           <span class="sr-only" id="tickerRole">JARVIS</span>
           <div class="core-caption-track"><span class="ticker-text" id="tickerText"></span></div>
         </div>
-        <canvas id="reactor" aria-hidden="true"></canvas>
+        <canvas id="reactor" tabindex="0" role="img" aria-label="Interactive voice core. Drag the core or a ring to rotate it. Drag empty space or use arrow keys to orbit the camera."></canvas>
         <div class="boot" id="bootOverlay" aria-hidden="true">
           <pre id="bootText"></pre>
           <div class="boot-foot">&gt;<span class="boot-cursor"></span></div>
@@ -185,7 +191,7 @@
   </div>
 
   <noscript><div class="noscript">J.A.R.V.I.S. requires JavaScript.</div></noscript>
-  <script src="dashboard.js?v=dashboard-2d90d5a28e19"></script>
-  <script src="jarvis.js?v=dashboard-2d90d5a28e19"></script>
+  <script src="dashboard.js?v=dashboard-1dfebff09c13"></script>
+  <script src="jarvis.js?v=dashboard-1dfebff09c13"></script>
 </body>
 </html>

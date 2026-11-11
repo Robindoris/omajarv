@@ -38,12 +38,32 @@ export function pickOrbitGroup(canvas,camera,targets,x,y) {
 // Camera-space input is transformed into each pivot parent's local space.
 export function installCoreOrbit(canvas,pivot,camera,isReduced,options={}) {
  const targets=options.targets||[pivot],velocities=new Map(targets.map(t=>[t,new THREE.Vector2()]));
+ const homeRotations=new Map(targets.map(t=>[t,t.quaternion.clone()]));
+ const homeCameraRotation=camera.quaternion.clone();
+ let quietTime=10;
+ const cameraVelocity=new THREE.Vector2();
+ const focus=options.focus||new THREE.Vector3();
+ const cameraOffset=new THREE.Vector3(),cameraRotation=new THREE.Quaternion();
  let selected=pivot;
+ function moveCamera(x,y){
+  camera.updateMatrixWorld();
+  right.set(1,0,0).applyQuaternion(camera.quaternion);
+  up.set(0,1,0).applyQuaternion(camera.quaternion);
+  axis.copy(up).multiplyScalar(-x).addScaledVector(right,-y);
+  const angle=axis.length();if(!angle)return;
+  cameraRotation.setFromAxisAngle(axis.normalize(),angle);
+  cameraOffset.copy(camera.position).sub(focus).applyQuaternion(cameraRotation);
+  camera.position.copy(focus).add(cameraOffset);
+  camera.up.applyQuaternion(cameraRotation).normalize();camera.lookAt(focus);camera.updateMatrixWorld();
+  canvas.dataset.cameraOrbit=camera.position.toArray().map(n=>n.toFixed(3)).join(',');
+ }
+
  let pointer=null,lastX=0,lastY=0,lastTime=0,moved=false;
  let velocity=velocities.get(selected);
  const axis=new THREE.Vector3(),step=new THREE.Quaternion();
  const right=new THREE.Vector3(),up=new THREE.Vector3();
  function rotate(x,y){
+  if(!selected){moveCamera(x,y);return;}
   camera.updateMatrixWorld();
   right.set(1,0,0).applyQuaternion(camera.quaternion);
   up.set(0,1,0).applyQuaternion(camera.quaternion);
@@ -56,7 +76,7 @@ export function installCoreOrbit(canvas,pivot,camera,isReduced,options={}) {
   if(pointer===null)return;
   const id=pointer;pointer=null;
   if(cancel||isReduced())velocity.set(0,0);
-  else if(!moved)velocity.set(1.2,.8);
+  else if(!moved)velocity.set(selected?1.2:0,selected?.8:0);
   else if(performance.now()-lastTime>120)velocity.set(0,0);
   if(canvas.hasPointerCapture?.(id))canvas.releasePointerCapture(id);
   canvas.classList.remove('orbit-dragging');
@@ -65,13 +85,16 @@ export function installCoreOrbit(canvas,pivot,camera,isReduced,options={}) {
   if(pointer!==null){finish(true);return;}
   if(!e.isPrimary || (e.pointerType==='mouse'&&e.button!==0))return;
   selected=options.targets?pickOrbitGroup(canvas,camera,targets,e.clientX,e.clientY):pivot;
-  if(!selected)return;
-  velocity=velocities.get(selected);canvas.dataset.orbitSelected=selected.name;
+  if(!selected&&!options.cameraOrbit)return;
+  velocity=selected?velocities.get(selected):cameraVelocity;canvas.dataset.orbitSelected=selected?selected.name:'Camera';
+  canvas.dataset.orbitGesture=selected?'object':'camera';
+  quietTime=0;
   pointer=e.pointerId;lastX=e.clientX;lastY=e.clientY;lastTime=performance.now();moved=false;
   velocity.set(0,0);canvas.setPointerCapture?.(pointer);canvas.classList.add('orbit-dragging');
  }
  function move(e){
   if(e.pointerId!==pointer)return;
+  quietTime=0;
   const now=performance.now(),dt=Math.max((now-lastTime)/1000,1/120);
   const scale=Math.PI*2/Math.max(180,Math.min(canvas.clientWidth,canvas.clientHeight));
   const x=(e.clientX-lastX)*scale,y=(e.clientY-lastY)*scale;
@@ -80,20 +103,40 @@ export function installCoreOrbit(canvas,pivot,camera,isReduced,options={}) {
  }
  const upEvent=e=>{if(e.pointerId===pointer)finish();};
  const cancel=e=>{if(e.pointerId===pointer)finish(true);};
- const stop=()=>{finish(true);velocities.forEach(v=>v.set(0,0));};
+ const stop=()=>{finish(true);velocities.forEach(v=>v.set(0,0));cameraVelocity.set(0,0);};
+ const key=e=>{
+  const directions={ArrowLeft:[-.08,0],ArrowRight:[.08,0],ArrowUp:[0,-.08],ArrowDown:[0,.08]};
+  if(!options.cameraOrbit||!directions[e.key])return;
+  e.preventDefault();quietTime=0;stop();moveCamera(...directions[e.key]);
+ };
  const visibility=()=>{if(document.hidden)stop();};
+ canvas.addEventListener('keydown',key);
  canvas.addEventListener('pointerdown',down);canvas.addEventListener('pointermove',move);
  canvas.addEventListener('pointerup',upEvent);canvas.addEventListener('pointercancel',cancel);canvas.addEventListener('lostpointercapture',cancel);
  window.addEventListener('blur',stop);document.addEventListener('visibilitychange',visibility);
  return {
   update(dt){
-   if(isReduced()){velocities.forEach(v=>v.set(0,0));return;}
+   quietTime=pointer===null?quietTime+dt:0;
+   if(isReduced()){velocities.forEach(v=>v.set(0,0));cameraVelocity.set(0,0);return;}
    const active=selected;
    for(const [target,v] of velocities){if(pointer!==null&&target===active)continue;selected=target;rotate(v.x*dt,v.y*dt);v.multiplyScalar(Math.exp(-dt*1.7));}
+   if(pointer===null||active){selected=null;moveCamera(cameraVelocity.x*dt,cameraVelocity.y*dt);cameraVelocity.multiplyScalar(Math.exp(-dt*3));}
    selected=active;
   },
+  returnHome(dt){
+   if(pointer!==null||quietTime<6||isReduced())return;
+   const blend=1-Math.exp(-dt*.4);
+   velocities.forEach(v=>v.multiplyScalar(Math.exp(-dt*5)));cameraVelocity.multiplyScalar(Math.exp(-dt*5));
+   targets.forEach(t=>t.quaternion.slerp(homeRotations.get(t),blend));
+   if(options.cameraOrbit){
+    const radius=camera.position.distanceTo(focus);
+    camera.quaternion.slerp(homeCameraRotation,blend);
+    cameraOffset.set(0,0,1).applyQuaternion(camera.quaternion).multiplyScalar(radius);
+    camera.position.copy(focus).add(cameraOffset);camera.up.set(0,1,0).applyQuaternion(camera.quaternion).normalize();camera.updateMatrixWorld();
+   }
+  },
   dispose(){
-   stop();canvas.removeEventListener('pointerdown',down);canvas.removeEventListener('pointermove',move);
+   stop();canvas.removeEventListener('keydown',key);canvas.removeEventListener('pointerdown',down);canvas.removeEventListener('pointermove',move);
    canvas.removeEventListener('pointerup',upEvent);canvas.removeEventListener('pointercancel',cancel);canvas.removeEventListener('lostpointercapture',cancel);
    window.removeEventListener('blur',stop);document.removeEventListener('visibilitychange',visibility);
   }

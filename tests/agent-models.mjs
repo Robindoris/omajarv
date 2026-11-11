@@ -13,7 +13,7 @@ try {
   fs.mkdirSync(path.join(home, 'bin'), {recursive: true});
   fs.mkdirSync(path.join(home, '.config/omarchy/defaults'), {recursive: true});
   fs.writeFileSync(path.join(home, '.config/omarchy/defaults/agent'), 'opencode', {mode: 0o600});
-  const {listModels, modelSelectable} = await import('../server/lib/agent-models.mjs');
+  const {listModels, modelSelectable, freeOpenCodeModel} = await import('../server/lib/agent-models.mjs');
 
   // No opencode binary on PATH: listing degrades to a note, never raw stderr.
   const broken = await listModels('opencode', {agent: 'opencode'});
@@ -21,6 +21,7 @@ try {
   assert.equal(broken.listed, false);
   assert.equal(broken.models.length, 0);
   assert.ok(typeof broken.note === 'string' && broken.note);
+  await assert.rejects(freeOpenCodeModel(), /discover a free OpenCode model/);
 
   process.env.PATH = path.join(home, 'bin') + ':' + oldPath;
   fs.writeFileSync(path.join(home, 'bin', 'opencode'), `#!/usr/bin/env node
@@ -40,6 +41,7 @@ process.exit(1);
   assert.equal(listing.ok, true);
   assert.equal(listing.listed, true);
   assert.equal(listing.note, '');
+  assert.equal(await freeOpenCodeModel(), 'opencode/glm-5.3-flash-free');
   assert.deepEqual(listing.models.map(m => m.id),
     ['opencode/glm-5.3-flash-free', 'openai/aa-paid', 'openai/gpt-5.6-cyber']);
   assert.deepEqual(listing.models.map(m => m.free), [true, false, false]);

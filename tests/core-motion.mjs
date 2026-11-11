@@ -1,0 +1,24 @@
+import assert from 'node:assert/strict';
+import {createCoreMotion} from '../frontend/src/core-motion.js';
+const motion=createCoreMotion();
+const advance=(seconds,level=0,reduced=false)=>{let frame;for(let t=0;t<seconds;t+=.05)frame=motion.step(.05,level,reduced);return frame;};
+motion.setMode('idle');const idle=advance(8);assert.ok(idle.speed<.03);
+motion.setMode('listening');assert.ok(motion.step(.05,.7).pulse>.5,'Speech onset creates a sharp pulse');
+advance(1,0);assert.ok(motion.step(.05,.8).pulse>.5,'Another phrase creates another pulse');
+motion.setMode('thinking');const early=advance(1);const late=advance(8);assert.ok(late.speed>early.speed*1.7,'Sustained work accelerates');
+motion.setMode('working');assert.ok(advance(1).speed>=late.speed,'Tool activity preserves acceleration');
+motion.setMode('responding');assert.ok(advance(.5).work===1);
+motion.setMode('idle');assert.ok(advance(12).speed<.04,'Completion settles back to standby');
+motion.setMode('working');const reduced=advance(3,.9,true);assert.equal(reduced.speed,0);assert.equal(reduced.energy,0);assert.equal(reduced.pulse,0);assert.equal(reduced.work,0);
+console.log('PASS: calm standby, voice pulses, work acceleration, smooth settling and reduced motion.');
+
+const thermal=createCoreMotion();thermal.setMode('working');
+let warm;for(let i=0;i<100;i++)warm=thermal.step(.05,0);
+const initialHeat=warm.heat;for(let i=0;i<300;i++)warm=thermal.step(.05,0);
+assert.ok(warm.heat>initialHeat+.3,'Longer work grows heat and glow');
+thermal.setMode('idle');const heatAtFinish=warm.heat;
+for(let i=0;i<20;i++)warm=thermal.step(.05,0);
+assert.ok(warm.heat<heatAtFinish&&warm.heat>.3,'Cooling is gradual');
+for(let i=0;i<1600;i++)warm=thermal.step(.05,0);
+assert.equal(warm.heat,0,'Extended standby extinguishes glow');assert.equal(warm.pose,0,'Idle animation returns to the original pose');assert.ok(warm.speed<.001);
+console.log('PASS: progressive heating, gradual cooling, cold standby and default animation pose.');

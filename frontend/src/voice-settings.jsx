@@ -4,6 +4,8 @@ import {Mic,Volume2,RefreshCw,Save} from 'lucide-react';
 import {VoiceSetup} from './voice-setup';
 import {Button} from './components/ui/button';
 
+const voicePersonas=[{id:'normal',name:'Normal',speed:1},{id:'calm',name:'Calm',speed:0.85},{id:'brisk',name:'Brisk',speed:1.15}];
+
 export function VoiceSettings({active}){
  const [installing,setInstalling]=useState(false);
  const [data,setData]=useState(null),[draft,setDraft]=useState(null),[loading,setLoading]=useState(false),[saving,setSaving]=useState(false),[error,setError]=useState(''),[message,setMessage]=useState('');
@@ -22,7 +24,8 @@ export function VoiceSettings({active}){
  const dirty=Boolean(data&&JSON.stringify(data.settings)!==JSON.stringify(draft));
  function models(kind,section,key){
   const options=data.models[kind]||[];
-  return <label className="settings-field">Installed local model<select aria-label={kind==='whisper'?'Installed Whisper model':'Installed Piper voice'} value={options.some(model=>model.path===draft[section].modelPath)?draft[section].modelPath:''} onChange={event=>{const model=options.find(model=>model.path===event.target.value);if(model){setMessage('');setDraft(previous=>({...previous,[section]:{...previous[section],[key]:model.name,modelPath:model.path}}));}}}><option value="">{options.length?'Choose an installed model…':'No installed models found'}</option>{options.map(model=><option key={model.path} value={model.path}>{model.name}</option>)}</select><small>{kind==='whisper'?'Whisper .bin model for speech recognition.':'Piper .onnx voice with a matching .onnx.json file.'}</small></label>;
+  const selected=options.find(model=>model.path===draft[section].modelPath)||(!draft[section].modelPath&&options.find(model=>model.name===draft[section][key]&&model.active));
+  return <label className="settings-field">{kind==='piper'?'Piper voice model':'Installed local model'}<select aria-label={kind==='whisper'?'Installed Whisper model':'Installed Piper voice'} value={selected?.path||''} onChange={event=>{const model=options.find(model=>model.path===event.target.value);if(model){setMessage('');setDraft(previous=>({...previous,[section]:{...previous[section],[key]:model.name,modelPath:model.path}}));}}}><option value="">{options.length?'Choose an installed model…':'No installed models found'}</option>{options.map(model=><option key={model.path} value={model.path}>{model.name}</option>)}</select><small>{kind==='whisper'?'Whisper .bin model for speech recognition.':'Choose an installed Piper voice, then Save settings to use it for spoken replies. Use Voice setup above if no models are installed.'}</small></label>;
  }
  return <div className="voice-settings">
   <header className="settings-heading"><div><span className="eyebrow">JARVIS / PREFERENCES</span><h2>Settings</h2><p>Voice recognition and local speech models.</p></div><Button type="button" variant="outline" disabled={loading||saving||dirty||installing} onClick={load}><RefreshCw size={15}/>Refresh</Button></header>
@@ -47,6 +50,7 @@ export function VoiceSettings({active}){
      {models('piper','tts','voice')}
      <label className="settings-field">Piper voice name<input required maxLength={100} value={draft.tts.voice} onChange={e=>change('tts','voice',e.target.value)}/></label>
      <label className="settings-field">Piper model path<input maxLength={4096} placeholder="Default voice directory, or /path/to/voice.onnx" value={draft.tts.modelPath} onChange={e=>change('tts','modelPath',e.target.value)}/><small>Custom models need their matching .onnx.json configuration beside the model.</small></label>
+     <label className="settings-field">Voice persona<select aria-label="Voice persona" value={voicePersonas.find(persona=>Math.abs(persona.speed-draft.tts.speed)<0.001)?.id||'custom'} onChange={event=>{const persona=voicePersonas.find(persona=>persona.id===event.target.value);if(persona)change('tts','speed',persona.speed);}}><option value="custom" disabled>Custom pace</option>{voicePersonas.map(persona=><option key={persona.id} value={persona.id}>{persona.name} · {persona.speed}×</option>)}</select><small>Delivery presets adjust speaking pace. The selected Piper model determines the voice; use the speed slider for a custom pace.</small></label>
      <label className="settings-field">Speaking speed <span className="settings-speed">{draft.tts.speed}×</span><input aria-label="Speaking speed" type="range" min={0.5} max={2} step={0.05} value={draft.tts.speed} onChange={e=>change('tts','speed',Number(e.target.value))}/><small>0.5× slower · 1× normal · 2× faster</small></label>
     </section>
     <aside className="settings-notice"><strong>Local speech, optional downloads.</strong><p>Use Voice setup above to download and verify missing models with one click, or select an installed model here. Text chat works without voice models. Your selected AI agent may still use its online provider.</p></aside>

@@ -4,7 +4,7 @@ import readline from 'node:readline';
 import { paths } from './config.mjs';
 import { privateError } from './privacy.mjs';
 
-export function runHermes({config, prompt, sessionId, signal, onText, env = {}}) {
+export function runHermes({config, prompt, sessionId, signal, onText, onActivity, env = {}}) {
   if (signal?.aborted) return Promise.reject(privateError('Cancelled'));
   return new Promise((resolve, reject) => {
     const child = spawn('hermes', ['acp'], {
@@ -13,6 +13,7 @@ export function runHermes({config, prompt, sessionId, signal, onText, env = {}})
       stdio:['pipe', 'pipe', 'pipe'],
     });
     let nextId = 0, session = sessionId || '', text = '', active = false;
+    let toolStarted = false;
     let settled = false, cancelling = false, cancelTimer, stderr = '';
     const pending = new Map();
     const send = value => child.stdin.write(JSON.stringify({jsonrpc:'2.0', ...value}) + '\n');
@@ -64,9 +65,11 @@ export function runHermes({config, prompt, sessionId, signal, onText, env = {}})
       try { message = JSON.parse(line); } catch { return; }
       if (message.method === 'session/update') {
         const update = message.params?.update;
+        if (active && ['tool_call','tool_call_update'].includes(update?.sessionUpdate)) {toolStarted = true;onActivity?.('working');}
         // Loading replays history; only emit chunks for this prompt.
         if (active && !cancelling && message.params.sessionId === session &&
             update?.sessionUpdate === 'agent_message_chunk' && update.content?.type === 'text') {
+          onActivity?.('responding');
           text += update.content.text;
           onText?.(update.content.text);
         }
@@ -82,7 +85,11 @@ export function runHermes({config, prompt, sessionId, signal, onText, env = {}})
       } else if (pending.has(message.id)) {
         const waiter = pending.get(message.id);
         pending.delete(message.id);
-        if (message.error) waiter.reject(privateError('Hermes ACP request failed. Check its provider and permissions.'));
+        if (message.error) {
+          const error = privateError('Hermes ACP request failed. Check its provider, credits and permissions.');
+          if (!toolStarted && /insufficient_quota|usage_limit_reached|credit balance (?:is )?too low|(?:hit|reached) (?:your |the )?usage limit|out of credits|credits? (?:exhausted|depleted)|usage limit (?:reached|exceeded)|insufficient (?:credits|balance)/i.test(JSON.stringify(message.error))) error.code = 'CREDITS_EXHAUSTED';
+          waiter.reject(error);
+        }
         else waiter.resolve(message.result);
       }
     });

@@ -153,3 +153,38 @@ microphone if a camera connection fails. Preserve stop/cancel behavior and the
 Tests: `tests/ip-camera.mjs`, `tests/camera-media.mjs`, camera route checks in
 `tests/voice-settings.mjs`, and camera workflows in `tests/theme-browser.mjs`.
 Never put the saved RTSP URL into API views, logs, screenshots or board notes.
+
+## Voice core motion
+
+`frontend/src/core-motion.js` supplies one smoothed motion envelope for the GLB
+and procedural fallback: nearly still standby, microphone onset pulses and gradual
+work acceleration. Activity pivots inside touch pivots preserve user manipulation.
+`core-orbit.js` picks rings/core independently; empty canvas space or arrow keys
+orbit the camera at a fixed distance. Keep direct input available with reduced
+motion, while disabling automatic motion/inertia. The same canvas becomes visible
+on Kanban during execution; do not mount a second WebGL renderer.
+
+`server/lib/agent-activity.mjs` tracks actual shared execution. Status/history expose
+minimal task metadata; chat SSE emits phase changes. Never infer execution from a
+card's column or expose tool payloads. Useful checks: `node tests/core-motion.mjs`,
+`node tests/core-orbit.mjs`, `node tests/agent-activity.mjs`,
+`node tests/kanban-bridge.mjs`, and `JARVIS_TEST_WEBGL=1 node tests/theme-browser.mjs`.
+
+The motion envelope also tracks heat and pose recovery. Work gradually raises
+emission/bloom; idle cools to zero glow and blends animation back to the original
+pose. Touch/camera pivots return home only after an input grace period, never while
+a pointer is held. Keep cold geometry visible with surface lighting rather than
+retaining artificial emission. Test thermal cooldown and auto-home separately.
+
+### Repository development launcher
+
+When the user asks to run/start dev, use `npm run dev` in a persistent managed
+terminal; when asked to restart, use `npm run dev:restart`. `dev:status`/`dev:stop`
+inspect/stop only the managed dev instance. Do not recreate an ad hoc /tmp script.
+`scripts/dev.mjs` builds the frontend and retains data in Git-ignored `.jarvis-dev/`,
+recreating `/tmp/jarvis-v2-dev/home` as a private socket alias after reboot. Existing
+temporary state migrates once; tokens/models/history persist. A healthy managed
+instance is reused; restart refuses an active reply or an unowned process. Keep a
+persistent terminal open while it runs. Optional JARVIS_DEV_DIR, JARVIS_DEV_ALIAS
+and JARVIS_DEV_PORT isolate additional checkouts/tests. `node tests/dev.mjs` verifies
+migration, duplicate prevention, restart and recovery after temporary alias removal.

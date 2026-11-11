@@ -24,7 +24,7 @@ Sources and terms:
   model, runtime and dataset terms for your use; JARVIS's MIT license covers JARVIS
   source only and does not relicense dependencies or downloaded models.
 - Existing Lessac or other voices can be reused, but their individual terms still
-  apply. The public installer does not download the personal Lessac default.
+  apply. The CLI installer keeps LJ Speech as its default.
 
 Whisper/Piper binaries must be installed separately; setup offers missing packages
 through the system package manager. Piper may require an AUR package and its own
@@ -46,3 +46,40 @@ downloads can be retried; configuration changes only after all required files ar
 verified. Settings edits are blocked during installation. No package-manager or
 administrator command runs from this button: missing Whisper, Piper or FFmpeg
 binaries are listed separately for installation on the computer.
+
+Settings also offers explicit Whisper size choices: lightweight tiny.en (~78 MB),
+balanced base.en (~148 MB), and heavy small.en (~488 MB). All are English-only,
+from the same pinned whisper.cpp revision and upstream MIT-licensed Whisper weights.
+The size selector keeps automatic reuse as its default. Selecting a size and pressing
+Download / use selected model explicitly downloads that variant if missing and selects
+it only after the whole setup succeeds. Piper setup remains independent of this choice.
+The API accepts optional `whisperSize`: `lightweight`, `balanced`, or `heavy`; all
+other values are rejected. GET reports the allowlisted choices and installed status.
+
+Local model downloads are always visible in Settings, independently of the guided
+setup step. Multilingual tiny (~78 MB) and small (~488 MB) are also offered at the
+same pinned revision. Selecting them sets recognition language to auto; selecting
+an English-only model sets English. The API choice IDs are `multilingualLight`
+and `multilingualHeavy`. The current selection preview shows its size and status.
+
+Piper has a separate **Voice output model** selector showing the pinned LJ Speech
+medium download size (model plus configuration) and installed status. Its default
+keeps the current voice or automatic reuse. Selecting LJ Speech and pressing
+**Download / use selected model** downloads the verified pair if needed, or switches
+to the installed pair. The API accepts optional `piperVoice: "ljspeech-medium"`
+and GET exposes `piperChoices`; unsupported voices are rejected.
+
+
+The dashboard also offers four optional, free-to-download Piper voices:
+Cori high (UK English, ~114 MB), Ryan high (US English, ~121 MB),
+Lili medium (Slovak, ~63 MB), and Jirka medium (Czech, ~63 MB).
+Exact totals include configuration and model cards. Ryan's card specifies
+CC BY-NC-SA 4.0 (noncommercial, attribution and share-alike); Cori's card lists
+a public-domain dataset, and Lili/Jirka list CC0 datasets. Dataset terms do not
+replace upstream model/runtime terms. Each selected voice shows its own terms
+and model-card link before download.
+
+Optional API `piperVoice` IDs are `ljspeech-medium`, `cori-high`, `ryan-high`,
+`lili-medium`, and `jirka-medium`. Every file uses the same pinned Piper revision,
+expected size and SHA-256 verification. Voice model cards use distinct local
+filenames so installing another voice preserves previously downloaded cards.

@@ -10,7 +10,34 @@ import fs from "node:fs";
 import path from "node:path";
 import { runHermes } from "./hermes.mjs";
 import { privateError } from "./privacy.mjs";
-import { paths, readSessions, writeSessions, resolveAgent } from "./config.mjs";
+import { paths, readSessions, writeSessions, resolveAgent, omarchyDefaultAgent } from "./config.mjs";
+
+import { freeOpenCodeModel } from './agent-models.mjs';
+
+let fallbackSource = '';
+let fallbackModel = '';
+function activeAgent(config) {
+  const source = resolveAgent(config);
+  if (fallbackSource && fallbackSource !== source) { fallbackSource = ''; fallbackModel = ''; }
+  return fallbackSource === source ? 'opencode' : source;
+}
+export function activeModel(config) {
+  const id = activeAgent(config);
+  return fallbackSource ? fallbackModel : config.agentModels?.[id] || '';
+}
+export function updateActiveModel(model) {
+  if (fallbackSource) fallbackModel = model;
+}
+function quotaError(value) {
+  // Match explicit billing failures, not generic network/auth/rate-limit errors.
+  const text = typeof value === 'string' ? value : JSON.stringify(value || '');
+  return /insufficient_quota|usage_limit_reached|billing_hard_limit_reached|credit balance (?:is )?too low|(?:hit|reached) (?:your |the )?usage limit|credit[s]? (?:balance (?:is )?)?(?:exhausted|depleted)|out of credits|usage limit (?:has been )?(?:reached|exceeded)|exceeded your current quota|insufficient (?:credits|balance)/i.test(text);
+}
+function providerError(value) {
+  const error = privateError('Agent request failed. Check its provider and permissions.');
+  if (quotaError(value)) error.code = 'CREDITS_EXHAUSTED';
+  return error;
+}
 
 const LABELS = {
   codex: "Codex",
@@ -45,7 +72,7 @@ function binPresent(bin) {
 }
 
 export function agentStatus(config) {
-  const id = resolveAgent(config);
+  const id = activeAgent(config);
   return { id, label: agentLabel(id), ready: ["codex", "claude", "opencode", "hermes"].includes(id) && binPresent(id) };
 }
 
@@ -71,7 +98,6 @@ function adapter(id, { prompt, session, config, images = [] }) {
         cmd: "opencode", args, cwd, stdin: prompt, requireSuccess: true,
         parse: (event, emit, setSession) => {
           if (event.sessionID) setSession(event.sessionID);
-      if (event.type === "error") throw privateError('OpenCode request failed. Check its provider and permissions.');
           if (event.type === "text" && typeof event.part?.text === "string") emit(event.part.text);
         },
       };
@@ -131,10 +157,31 @@ function adapter(id, { prompt, session, config, images = [] }) {
 
 // Run one turn. `onText` receives incremental text; the promise resolves with
 // the full reply plus the adapter's session id (for --resume next turn).
-export function runAgent({ config, text, sessionId, signal, onText, env = {}, images = [] }) {
+export async function runAgent(options) {
+  const source = resolveAgent(options.config);
+  const id = activeAgent(options.config);
+  let model = activeModel(options.config);
+  if (id === 'opencode' && (fallbackSource || (!options.config.agent && !omarchyDefaultAgent()))) {
+    model = model || await freeOpenCodeModel();
+  }
+  const config = {...options.config, agent:id, agentModels:{...options.config.agentModels, ...(model ? {[id]:model} : {})}};
+  let emitted = false;
+  try {
+    return await runAgentOnce({...options, config, onText:chunk=>{emitted=true;options.onText?.(chunk);}});
+  } catch (error) {
+    if ((id === 'opencode' && model?.startsWith('opencode/') && model.endsWith('-free')) || error.code !== 'CREDITS_EXHAUSTED' || emitted || options.signal?.aborted) throw error;
+    const free = await freeOpenCodeModel();
+    if (options.signal?.aborted) throw privateError('Cancelled');
+    fallbackSource = source; fallbackModel = free;
+    options.onAgentChange?.({id:'opencode', label:'OpenCode', model:free});
+    return runAgentOnce({...options, sessionId:rememberedSession('opencode'), config:{...config,agent:'opencode',agentModels:{...config.agentModels,opencode:free}}});
+  }
+}
+
+function runAgentOnce({ config, text, sessionId, signal, onText, onActivity, env = {}, images = [] }) {
   const id = resolveAgent(config);
   const prompt = buildPrompt(text, config);
-  if (id === "hermes") return runHermes({config, prompt, sessionId, signal, onText, env});
+  if (id === "hermes") return runHermes({config, prompt, sessionId, signal, onText, onActivity, env});
   const spec = adapter(id, { prompt, session: sessionId, config, images });
 
   return new Promise((resolve, reject) => {
@@ -149,6 +196,7 @@ export function runAgent({ config, text, sessionId, signal, onText, env = {}, im
     let text_out = "";
     let raw = "";
     let stderr = "";
+    let toolStarted = false;
     let settled = false;
     let emittedPerSource = new Map();
 
@@ -158,6 +206,7 @@ export function runAgent({ config, text, sessionId, signal, onText, env = {}, im
 
     function emit(chunk) {
       if (!chunk) return;
+      onActivity?.('responding');
       text_out += chunk;
       onText?.(chunk);
     }
@@ -173,6 +222,7 @@ export function runAgent({ config, text, sessionId, signal, onText, env = {}, im
     }
 
     function fail(error) {
+      if (toolStarted && error.code === 'CREDITS_EXHAUSTED') delete error.code;
       if (settled) return;
       settled = true;
       clearTimeout(timer);
@@ -185,7 +235,9 @@ export function runAgent({ config, text, sessionId, signal, onText, env = {}, im
       settled = true;
       clearTimeout(timer);
       if (code !== 0 && (!text_out || spec.requireSuccess)) {
-        reject(privateError(`${agentLabel(id)} exited with code ${code}. Check its provider and permissions.`));
+        const error = providerError(stderr);
+        if (toolStarted) delete error.code;
+        reject(error);
         return;
       }
       if (spec.finalText && !text_out) {
@@ -211,6 +263,8 @@ export function runAgent({ config, text, sessionId, signal, onText, env = {}, im
         return;
       }
       try {
+        if (event.type === 'tool_use' || event.content_block?.type === 'tool_use' || event.event?.content_block?.type === 'tool_use' || event.message?.content?.some?.(block=>block.type==='tool_use') || ['command_execution','mcp_tool_call','file_change'].includes(event.item?.type)) {toolStarted = true;onActivity?.('working');}
+        if (event.type === 'error' || event.type === 'turn.failed' || (event.type === 'result' && event.is_error)) throw providerError(event.error || event.errors || event.result || event);
         spec.parse(event, (chunk) => {
           const key = event.item?.id || event.part?.id || event.message?.id || event.sessionID || "default";
           emitCumulative(key, chunk);

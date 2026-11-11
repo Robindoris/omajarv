@@ -86,14 +86,24 @@ first. Hermes does not expose a scriptable list (`listed: false` plus a `note`
 pointing at `hermes model`). Agents without model choice return `listed: false`
 and no note.
 
+The browser header follows system agent changes and offers OpenCode's model picker.
+`JARVIS_OMARCHY_AGENT_FILE` can point an isolated development bridge at the real
+Omarchy selection file without sharing the rest of its runtime state.
+
 `POST /api/agent/model` takes `{ "model": "provider/model" }` — or
 `{ "model": "" }` to return the agent to its own default. An empty model pins
 nothing; the agent's provider default stays in control. The chosen id must be in
 the current listing (400 otherwise); invalid requests return 400 and an active
-chat returns 409. The choice is stored per agent (config `agentModels`), applies
+chat returns 409. Clients can include `agent` to reject a stale agent selection (409). The choice is stored per agent (config `agentModels`), applies
 to the next request (`--model` for OpenCode), and is reflected in `agent.model`
 plus `agent.modelSelectable` in `GET /api/status`. The response is the refreshed
-`GET /api/models` payload.
+`GET /api/models` payload. If no system agent is selected, or a selected paid agent
+reports exhausted credits before reply/tool execution, OpenCode uses a discovered
+`opencode/*-free` model. No available free model produces an actionable error;
+network/auth/rate-limit failures do not trigger fallback. The billing fallback
+lasts for the process or until the configured/system selection changes. Explicit
+model choices made during fallback override its free model; clearing returns to
+free discovery. A fallback uses OpenCode's own session, never another agent's ID.
 
 ## `GET /api/voice-settings` and `POST /api/voice-settings`
 
@@ -139,7 +149,7 @@ Validation:
   at most 4096 characters with no control characters. Explicit paths must name
   an existing nonempty `.bin` Whisper model or `.onnx` Piper model; Piper also
   requires a nonempty matching `.onnx.json` file. Paths are reused in place.
-- `maxRecordingSec`: integer 1–600 seconds. `tts.speed`: number 0.5–2 inclusive.
+- `maxRecordingSec`: integer 1–600 seconds. `tts.speed`: number 0.5–2 inclusive. Settings voice personas are pace presets stored through `tts.speed`: Normal (1), Calm (0.85), and Brisk (1.15). Other speeds display as Custom pace; presets preserve the selected Piper model.
 
 Discovery uses the configured paths and bounded existing common model folders;
 Piper discoveries require the matching JSON file. Choosing a discovery should
@@ -309,3 +319,98 @@ Browser checks include save/forget, JPEG preview, audio playback, camera-only
 push-to-talk, cancellation, disconnection and stream-test failure recovery at
 1280px, 390px and 320px. Cancelled/disconnected recordings are never uploaded.
 A real camera still needs its own address/credentials and both stream test buttons.
+
+## Shared execution activity
+
+Authenticated status and history responses include `activity` (or `null`):
+`{source:"chat"|"kanban",phase,task:{id,title}|null,startedAt,updatedAt,endedAt?}`.
+Phases are `thinking` (waiting for the agent), `working` (reported tool event),
+`responding` (receiving text), and terminal `completed`, `error`, `interrupted`.
+Terminal activity expires after eight seconds. Moving a board card alone never
+creates execution activity. Task notes, tool payloads and raw errors are excluded.
+Chat SSE also emits `activity` when the phase changes. Browser history polling
+synchronizes the shared core and task banner across workspaces/devices without
+changing the local microphone/playback state. The board view reveals the same
+core while a task is active and briefly after it finishes.
+
+
+Piper download choices in `GET /api/voice-setup` are returned as `piperChoices`
+with `id`, `name`, `description`, `terms`, `modelCard`, `bytes`, and `installed`.
+POST accepts optional `piperVoice`: `ljspeech-medium`, `cori-high`, `ryan-high`,
+`lili-medium`, or `jirka-medium`, alongside explicit `consent: true`.
+Unsupported IDs are rejected; switching applies only after required downloads verify.
+
+
+PostgreSQL conversation storage is optional and configured privately; see [storage operations](CONVERSATION-STORAGE.md). History operations are asynchronous and must be awaited. Configured database failures do not fall back to JSON.
+
+
+### PostgreSQL Kanban storage
+
+When the shared bridge PostgreSQL connection is configured, Kanban uses the same
+project database and schema. The versioned `kanban_state` table stores the board,
+request deduplication records, and the latest 20 pre-change history snapshots.
+Every mutation and run transition commits the board and recovery history in one
+transaction under a database lock. Concurrent stale revisions return 409. Reads
+and writes fail closed if configured storage is unavailable.
+
+On the next bridge startup, existing board and backup JSON files are imported once
+without deleting or rewriting originals. Later startups use PostgreSQL and mark
+unfinished queued/running tasks Interrupted. Restart only when no reply is active.
+Unconfigured installations retain JSON storage. Original JSON files are migration
+recovery copies, not up-to-date exports after switching; use the authenticated
+board backup API for current board exports and normal database backups for the
+complete database. Restore retains the existing review/confirmation requirement.
+
+Verify using `node tests/kanban.mjs`, `node tests/kanban-runner.mjs`,
+`node tests/kanban-bridge.mjs`, and
+`JARVIS_TEST_DATABASE_ENV=PRIVATE_PROJECT_ENV node tests/postgres-kanban.mjs`.
+The PostgreSQL test uses synthetic tasks in a disposable random schema.
+
+Phone sudo polling returns `{enabled:false,requests:[]}` in HTTP development mode,
+including when HTTPS terminates at a proxy. Clients stop polling until page reload.
+HTTPS bridge mode returns `enabled:true`. The approval POST remains forbidden in
+HTTP mode; transient polling failures remain retryable.
+
+## Built-in calendar and notification inbox
+
+Calendar and notification data share the bridge's configured PostgreSQL database,
+using the versioned `planner_state` table. Board data remains separate. New database
+objects do not replace existing tables. Unconfigured installations use private atomic
+JSON storage; configured database failures return sanitized 503 errors without falling
+back. Calendar mutations and notification updates are transactional. The shared
+calendar is available across authenticated desktop and phone sessions, not separate
+multi-user accounts.
+
+- `GET /api/calendar`: revision, original event series, occurrence list and host time
+  zone. Optional numeric epoch-millisecond `from` and `to` select up to 400 days.
+- `POST /api/calendar`: `action:create|edit|delete`, reviewed `revision`, unique
+  `requestId`; edit/delete also require `id`. Create/edit accept `title`, `notes`,
+  ISO `startAt` and `endAt`, IANA `timeZone`, `reminderMinutes` (0–43200), and
+  `recurrence:none|daily|weekly|monthly`. At most 500 event series are retained.
+  Edits/deletions affect the series. Stale revisions/conflicting request IDs return
+  409. Repeating an identical request is safe.
+- `GET /api/notifications`: visible `items` and `unread` count. Items include source,
+  target ID, title, body, creation time, read state and snooze time.
+- `POST /api/notifications`: `action:notification:read|notification:dismiss|notification:snooze`,
+  `id`; snooze requires `minutes:5|15|60`.
+
+The scheduler checks every 15 seconds while the bridge runs. Calendar reminders
+are deduplicated by event occurrence, and edits/deletions invalidate previous
+reminders for that event. Missed reminders are caught up only while an event remains
+relevant. Daily/weekly/monthly recurrence preserves the event's wall time and original
+month day where possible. Missing DST wall times advance by the gap. The editor uses
+the device time zone and rejects nonexistent local input times. The month grid shows
+occurrences in the device time zone. Series edits show the original starting date.
+
+Kanban completion, failure, interruption and overdue notifications are derived from
+observed board states. Existing finished tasks are baselined on first startup;
+intermediate changes between scheduler checks may be coalesced. The latest 500
+notifications persist across restarts. In-app delivery requires no browser notification
+permission; operating-system push and external calendar synchronization are not part
+of this version. Event content is untrusted user data.
+
+The agent calendar CLI supports `list`, `add JSON`, `edit ID JSON`, and `delete ID`
+over the authenticated private socket. Tests: `node tests/planner.mjs`, optionally
+with `JARVIS_TEST_DATABASE_ENV` for disposable PostgreSQL schemas; authenticated API
+coverage in `tests/kanban-bridge.mjs`; desktop and phone interaction/layout coverage
+in `tests/theme-browser.mjs`. No real events or provider requests are used in tests.

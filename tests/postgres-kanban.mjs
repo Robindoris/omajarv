@@ -1,0 +1,34 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import {randomBytes} from 'node:crypto';
+import {Pool} from 'pg';
+import {openKanban} from '../server/lib/postgres-kanban.mjs';
+import {createKanban} from '../server/lib/kanban.mjs';
+import {readDatabaseUrl} from '../server/lib/postgres-history.mjs';
+const directory=fs.mkdtempSync(path.join(os.tmpdir(),'jarvis-pg-board-'));
+const connectionString=readDatabaseUrl(path.dirname(process.env.JARVIS_TEST_DATABASE_ENV));
+const schema='test_kanban_'+randomBytes(8).toString('hex');
+const pool=new Pool({connectionString});let board,second;
+try{
+ const legacy=createKanban(directory);legacy.update({revision:0,action:'create',title:'Preserve task',notes:'Full migration description'});
+ const original=fs.readFileSync(path.join(directory,'kanban.json'),'utf8');
+ board=await openKanban(directory,{connectionString,schema});
+ assert.equal((await board.view()).tasks[0].notes,'Full migration description');assert.equal((await board.backups()).length,1);
+ const input={revision:1,action:'edit',id:(await board.view()).tasks[0].id,notes:'Updated description',requestId:'migration-test-1'};
+ await board.update(input);await board.update(input);assert.equal((await board.view()).revision,2);
+ await assert.rejects(board.update({...input,notes:'Changed'}),e=>e.status===409);
+ second=await openKanban(directory,{connectionString,schema});assert.deepEqual(await second.backup().then(({createdAt,...r})=>r),await board.backup().then(({createdAt,...r})=>r));
+ const results=await Promise.allSettled([board.update({revision:2,action:'create',title:'Concurrent A'}),second.update({revision:2,action:'create',title:'Concurrent B'})]);
+ assert.equal(results.filter(r=>r.status==='fulfilled').length,1);assert.equal((await board.view()).revision,3);
+ const history=await board.backups();assert.equal(history.length,3);assert.equal((await board.savedBackup(1)).tasks[0].notes,'Full migration description');
+ await pool.query(`CREATE FUNCTION "${schema}".reject_write() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'test'; END $$`);
+ await pool.query(`CREATE TRIGGER reject_write BEFORE UPDATE ON "${schema}".kanban_state FOR EACH ROW EXECUTE FUNCTION "${schema}".reject_write()`);
+ await assert.rejects(board.update({revision:3,action:'create',title:'Rollback'}),e=>e.status===503);assert.equal((await board.view()).revision,3);assert.deepEqual(await board.backups(),history);
+ await pool.query(`DROP TRIGGER reject_write ON "${schema}".kanban_state`);
+ const id=(await board.view()).tasks[0].id;await board.update({revision:3,action:'queue',id});const task=await board.startNext();assert.equal(task.execution,'running');
+ await second.close();second=await openKanban(directory,{connectionString,schema});assert.equal((await second.view()).tasks[0].execution,'interrupted');
+ assert.equal(fs.readFileSync(path.join(directory,'kanban.json'),'utf8'),original);
+ console.log('PASS: PostgreSQL board migration, history, idempotency, concurrent revisions, rollback, restart recovery and intact originals.');
+}finally{await board?.close();await second?.close();await pool.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);await pool.end();fs.rmSync(directory,{recursive:true,force:true});}

@@ -1,7 +1,7 @@
 // Authenticated voice configuration only: no credentials, downloads or broad scans.
 import path from 'node:path';
 import os from 'node:os';
-import { discoverModels, usable } from './models.mjs';
+import { discoverModels, usable, piperPath } from './models.mjs';
 import { writeConfig } from './config.mjs';
 import { sttStatus, stopWhisperServer } from './stt.mjs';
 import { ttsStatus } from './tts.mjs';
@@ -38,7 +38,7 @@ export function voiceSettingsView(config) {
     },
     models: {
       whisper: installed.whisper.map(file => ({ name: path.basename(file).replace(/^ggml-/, '').replace(/\.bin$/, ''), path: file })),
-      piper: installed.piper.map(file => ({ name: path.basename(file, '.onnx'), path: file })),
+      piper: installed.piper.map(file => ({ name: path.basename(file, '.onnx'), path: file, active: file === piperPath(config) })),
     },
     status: { stt: sttStatus(config), tts: ttsStatus(config) },
   };

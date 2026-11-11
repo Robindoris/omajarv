@@ -96,3 +96,13 @@ export async function modelAvailable(agentId, config, model) {
   const ids = await opencodeModelIds();
   return ids.includes(model);
 }
+
+// Discover a free hosted model; never silently use a paid provider default.
+export async function freeOpenCodeModel() {
+  let ids;
+  try { ids = await opencodeModelIds(); }
+  catch { throw privateError('Could not discover a free OpenCode model. Install OpenCode and check its model catalog in a terminal.'); }
+  const model = ids.find(id => id.startsWith('opencode/') && freeModel(id));
+  if (!model) throw privateError('OpenCode has no free model available. Configure a provider or choose another agent.');
+  return model;
+}

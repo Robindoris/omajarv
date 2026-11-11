@@ -66,3 +66,14 @@ free variants first; Hermes currently supplies a note directing users to `hermes
 model`, not a selectable list. Codex/Claude do not expose this picker. Do not invent
 models for unsupported agents. Selection/reset must respect an active chat, and
 model lookup must not take the chat/recording lock or change the activity label.
+
+The v2 header follows system agent changes and exposes the OpenCode picker.
+Without a system selection, resolve to OpenCode and discover a hosted `*-free`
+model. An explicit billing exhaustion before output/tool execution also activates
+an in-memory free OpenCode fallback; do not retry network/auth/rate-limit failures.
+Fallback uses OpenCode's own session and is cleared by a selection change or bridge
+restart. Test with `node tests/agent-fallback.mjs`, fake CLI tools and no providers.
+Use `JARVIS_OMARCHY_AGENT_FILE` for isolated dev homes that follow a real selection.
+
+
+PostgreSQL conversation storage is optional and configured privately; see [storage operations](../../docs/CONVERSATION-STORAGE.md). History operations are asynchronous and must be awaited. Configured database failures do not fall back to JSON.

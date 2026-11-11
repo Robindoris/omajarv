@@ -19,3 +19,16 @@ real service/package managers. Never use a bare temporary HOME as systemd isolat
 
 Read the relevant skill guide for targeted tests, native deployment and release
 workflow. Do not push or submit external updates merely because a skill was loaded.
+
+## Starting development
+
+When asked to run/start dev, use `npm run dev` in a persistent managed terminal.
+When explicitly asked to restart dev, use `npm run dev:restart`. Check
+`npm run dev:status` first when ownership is unclear. Do not hand-create a launcher
+under /tmp or start another copy of the installed version-one service.
+
+`scripts/dev.mjs` builds the frontend, preserves isolated dev data in the ignored
+`.jarvis-dev/` directory and recreates the temporary private-socket alias used by
+the dev tailnet listener. Existing dev config/history/models are migrated once.
+`npm run dev` reuses a healthy managed server rather than duplicating it. Restart
+refuses to interrupt an active reply. See the dashboard guide for browser opening.
