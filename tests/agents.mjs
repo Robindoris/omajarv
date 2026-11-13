@@ -34,6 +34,8 @@ if (id === 'hermes') {
     if (msg.method === 'session/prompt') {
       const prompt = msg.params.prompt[0].text;
       fs.writeFileSync(path.join(process.env.JARVIS_AGENT_TEST_HOME, 'invocation'), JSON.stringify({args, prompt, cwd:process.cwd(), log}));
+      if (prompt.includes('reply flood request')) { promptId=msg.id;chunk('x'.repeat(300000));return; }
+      if (prompt.includes('output flood request')) { promptId=msg.id;process.stdout.write('x'.repeat(5*1024*1024));return; }
       if (prompt.includes('slow request')) { promptId = msg.id; return; }
       if (prompt.includes('failure request')) { send({id:msg.id, error:{message:'provider unavailable '+prompt}}); return; }
       if (prompt.includes('permission request')) {
@@ -58,6 +60,8 @@ if (id === 'hermes') {
   process.stdin.on('data', data => prompt += data);
   process.stdin.on('end', () => {
     fs.writeFileSync(path.join(process.env.JARVIS_AGENT_TEST_HOME, 'invocation'), JSON.stringify({args, prompt, cwd: process.cwd()}));
+    if (prompt.includes('reply flood request')) { send({type:'text',part:{id:'flood',text:'x'.repeat(300000)}});return; }
+    if (prompt.includes('output flood request')) { process.stdout.write('x'.repeat(5*1024*1024));return; }
     if (prompt.includes('slow request')) { setTimeout(() => {}, 30000); return; }
     if (prompt.includes('failure request')) { send({type:'error', error:{message:'provider unavailable '+prompt}}); return; }
     send({type:'step_start', sessionID:'opencode-session'});
@@ -108,6 +112,8 @@ if (id === 'hermes') {
       assert.ok(!error.message.includes(config.systemPrompt));
       return /request failed/.test(error.message);
     });
+    await assert.rejects(runAgent({config, text:'reply flood request'}), /limit exceeded/);
+    await assert.rejects(runAgent({config, text:'output flood request'}), /limit exceeded/);
     const controller = new AbortController();
     const pending = runAgent({config, text:'slow request', signal:controller.signal});
     if (id === 'hermes') {

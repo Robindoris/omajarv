@@ -279,6 +279,7 @@ open)
 tailscale-enable) exec node "$ROOT/server/lib/tailscale.mjs" enable ;;
 tailscale-status) exec node "$ROOT/server/lib/tailscale.mjs" status ;;
 desktop) exec node "$ROOT/server/desktop.mjs" ;;
+native-command) shift; exec node "$ROOT/server/native-command.mjs" "$@" ;;
 toggle) omarchy-shell shell toggle h3man.jarvis ;;
 phone) omarchy-shell h3man.jarvis phone ;;
 logs) shift || true; cmd_logs "${1:-60}" ;;

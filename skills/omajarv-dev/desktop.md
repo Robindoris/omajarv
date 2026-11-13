@@ -54,3 +54,19 @@ processes, so consider an active native conversation before restarting it.
 Use the Omarchy skill for actual shell config/keybindings. This machine's existing
 shortcut is Super+Ctrl+J, but check live bindings rather than overriding blindly.
 Do not use `omarchy refresh shell` as a restart: it resets user configuration.
+
+
+Native clipboard reads must stay outside Qt's GUI input path. All editable fields
+forward paste keys to PasteGuard before the native handler; it also intercepts
+middle-click PRIMARY and suppresses native right-click paste menus. Route reads
+through server/lib/clipboard.mjs and bounded-process.mjs, preserving explicit-user
+paste and selection choice. Finite native CLI requests use `jarvis native-command`
+so QML collectors only see bounded output. Keep limits aligned with SECURITY.md.
+Run `node tests/native-hardening.mjs`, `node tests/integration.mjs`, and the Qt 6
+`qmltestrunner -input tests/qml/tst_clipboard.qml` with the offscreen platform and
+Basic controls style; `/usr/bin/qmltestrunner` may be an incompatible Qt 5 build.
+
+Agent transports and HTTP SSE also bound cumulative input/output and pending
+writes before data reaches the native panel. Managed subprocesses are registered
+for exit cleanup, and server shutdown aborts the current turn. Run tests/agents.mjs
+and tests/integration.mjs after changing these limits or lifecycle behavior.

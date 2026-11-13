@@ -53,7 +53,8 @@ fs.writeFileSync(path.join(home,'bin/zenity'),`#!/usr/bin/env node
 console.log(process.env.HOME+'/selected.txt');
 `,{mode:0o755});
 fs.writeFileSync(path.join(home,'bin/wl-paste'),`#!/usr/bin/env node
-if(process.argv.includes('--list-types')) console.log('image/png');
+if(process.argv.includes('--type') && process.argv.includes('text')) process.stdout.write(process.argv.includes('--primary')?'PRIMARY_TEXT_FIXTURE':'CLIPBOARD_TEXT_FIXTURE');
+else if(process.argv.includes('--list-types')) console.log('image/png');
 else process.stdout.write(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=','base64'));
 `,{mode:0o755});
 fs.writeFileSync(path.join(home,'bin/tailscale'),'#!/bin/sh\nprintf \'{}\\n\'\n',{mode:0o755});
@@ -194,7 +195,11 @@ async function desktopAction(action) {
  assert.ok(!output.includes('"event":"error"'),output);
  return output.split('\n').filter(Boolean).map(line=>JSON.parse(line));
 }
-let desktopEvents=await desktopAction({action:'attachFiles'});
+let desktopEvents=await desktopAction({action:'pasteClipboard',textOnly:true,primary:true});
+assert.equal(desktopEvents.find(e=>e.event==='clipboardText').text,'PRIMARY_TEXT_FIXTURE');
+desktopEvents=await desktopAction({action:'pasteClipboard',textOnly:true});
+assert.equal(desktopEvents.find(e=>e.event==='clipboardText').text,'CLIPBOARD_TEXT_FIXTURE');
+desktopEvents=await desktopAction({action:'attachFiles'});
 assert.equal(desktopEvents.find(e=>e.event==='attachments').files[0].name,'selected.txt');
 desktopEvents=await desktopAction({action:'pasteClipboard',imageOnly:true});
 const desktopFiles=desktopEvents.find(e=>e.event==='attachments').files;

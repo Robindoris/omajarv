@@ -4,7 +4,7 @@
 // The agent is whatever Omarchy considers the default coding agent, unless the
 // user pins one in ~/.config/omarchy-jarvis/config.json.
 
-import { spawn } from "node:child_process";
+import { managedSpawn, killGroup } from "./bounded-process.mjs";
 import readline from "node:readline";
 import fs from "node:fs";
 import path from "node:path";
@@ -138,7 +138,9 @@ export function runAgent({ config, text, sessionId, signal, onText, env = {}, im
   const spec = adapter(id, { prompt, session: sessionId, config, images });
 
   return new Promise((resolve, reject) => {
-    const child = spawn(spec.cmd, spec.args, {
+    const child = managedSpawn(spec.cmd, spec.args, {
+      // A completed agent may still own a pending phone sudo approval.
+      timeout:245000, killOnClose:false,
       cwd: spec.cwd,
       env: { ...process.env, ...env, NO_COLOR: "1", FORCE_COLOR: "0", TERM: "dumb" },
       stdio: ["pipe", "pipe", "pipe"],
@@ -150,6 +152,7 @@ export function runAgent({ config, text, sessionId, signal, onText, env = {}, im
     let raw = "";
     let stderr = "";
     let settled = false;
+    let outputBytes = 0, diagnosticBytes = 0;
     let emittedPerSource = new Map();
 
     const timer = setTimeout(() => {
@@ -157,14 +160,16 @@ export function runAgent({ config, text, sessionId, signal, onText, env = {}, im
     }, 240000);
 
     function emit(chunk) {
-      if (!chunk) return;
+      if (!chunk || settled) return;
+      if (text_out.length + chunk.length > 256*1024) return fail(privateError("Agent reply size limit exceeded"));
       text_out += chunk;
-      onText?.(chunk);
+      try { onText?.(chunk); } catch (error) { fail(error); }
     }
 
     // Some CLIs repeat the whole message on each event; only forward the part
     // we have not seen yet, keyed by the message/part id when one is present.
     function emitCumulative(key, full) {
+      if (!emittedPerSource.has(key) && emittedPerSource.size >= 4096) return fail(privateError("Agent event source limit exceeded"));
       const previous = emittedPerSource.get(key) || "";
       if (full === previous) return;
       if (full.startsWith(previous)) emit(full.slice(previous.length));
@@ -177,14 +182,16 @@ export function runAgent({ config, text, sessionId, signal, onText, env = {}, im
       settled = true;
       clearTimeout(timer);
       killTree(child);
+      child.stdout.destroy();
+      child.stderr.destroy();
       reject(error);
     }
 
     function done(code) {
       if (settled) return;
-      settled = true;
       clearTimeout(timer);
       if (code !== 0 && (!text_out || spec.requireSuccess)) {
+        settled = true;
         reject(privateError(`${agentLabel(id)} exited with code ${code}. Check its provider and permissions.`));
         return;
       }
@@ -192,6 +199,8 @@ export function runAgent({ config, text, sessionId, signal, onText, env = {}, im
         const final = spec.finalText({ text: text_out }, raw);
         if (final) emit(final);
       }
+      if (settled) return;
+      settled = true;
       resolve({ text: text_out.trim(), session, agent: id, label: agentLabel(id) });
     }
 
@@ -200,6 +209,7 @@ export function runAgent({ config, text, sessionId, signal, onText, env = {}, im
     else child.stdin.end();
 
     const onLine = (line) => {
+      if (settled) return;
       const trimmed = line.trim();
       if (!trimmed) return;
       raw += trimmed + "\n";
@@ -223,9 +233,15 @@ export function runAgent({ config, text, sessionId, signal, onText, env = {}, im
       }
     };
 
+    child.stdout.on("data", chunk => {
+      outputBytes += chunk.length;
+      if (outputBytes > 4*1024*1024) fail(privateError("Agent output size limit exceeded"));
+    });
     const rl = readline.createInterface({ input: child.stdout, crlfDelay: Infinity });
     rl.on("line", onLine);
     child.stderr.on("data", (chunk) => {
+      diagnosticBytes += chunk.length;
+      if (diagnosticBytes > 1024*1024) return fail(privateError("Agent diagnostic limit exceeded"));
       stderr += chunk.toString();
       if (stderr.length > 8000) stderr = stderr.slice(-4000);
     });
@@ -240,7 +256,7 @@ export function runAgent({ config, text, sessionId, signal, onText, env = {}, im
     });
 
     if (signal) {
-      const onAbort = () => fail(privateError("Cancelled"));
+      const onAbort = () => { if (settled) killGroup(child); else fail(privateError("Cancelled")); };
       if (signal.aborted) onAbort();
       else signal.addEventListener("abort", onAbort, { once: true });
     }

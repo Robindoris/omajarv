@@ -1,5 +1,5 @@
 // Hermes ACP keeps prompts on stdin and explicitly cancels gateway-owned work.
-import { spawn } from 'node:child_process';
+import { managedSpawn } from './bounded-process.mjs';
 import readline from 'node:readline';
 import { paths } from './config.mjs';
 import { privateError } from './privacy.mjs';
@@ -7,16 +7,23 @@ import { privateError } from './privacy.mjs';
 export function runHermes({config, prompt, sessionId, signal, onText, env = {}}) {
   if (signal?.aborted) return Promise.reject(privateError('Cancelled'));
   return new Promise((resolve, reject) => {
-    const child = spawn('hermes', ['acp'], {
+    const child = managedSpawn('hermes', ['acp'], {
+      timeout:250000, killOnClose:false,
       cwd: config.workDir || paths.root, detached: true,
       env: {...process.env, ...env, NO_COLOR:'1', FORCE_COLOR:'0', TERM:'dumb'},
       stdio:['pipe', 'pipe', 'pipe'],
     });
     let nextId = 0, session = sessionId || '', text = '', active = false;
     let settled = false, cancelling = false, cancelTimer, stderr = '';
+    let receivedBytes = 0, diagnosticBytes = 0, eventCount = 0;
     const pending = new Map();
-    const send = value => child.stdin.write(JSON.stringify({jsonrpc:'2.0', ...value}) + '\n');
+    const send = value => {
+      const line = JSON.stringify({jsonrpc:'2.0', ...value}) + '\n';
+      if (child.stdin.writableLength + Buffer.byteLength(line) > 256*1024) return finish(privateError('Hermes command queue limit exceeded'));
+      child.stdin.write(line);
+    };
     const request = (method, params) => new Promise((resolve, reject) => {
+      if (settled || pending.size >= 8) return reject(privateError('Hermes request queue limit exceeded'));
       const id = ++nextId;
       pending.set(id, {resolve, reject});
       send({id, method, params});
@@ -54,12 +61,21 @@ export function runHermes({config, prompt, sessionId, signal, onText, env = {}})
     signal?.addEventListener('abort', abort, {once:true});
     child.on('error', finish);
     child.stdin.on('error', finish);
-    child.stderr.on('data', chunk => { stderr = (stderr + chunk).slice(-2000); });
+    child.stderr.on('data', chunk => {
+      diagnosticBytes += chunk.length;
+      if (diagnosticBytes > 1024*1024) return cancel('Hermes diagnostic limit exceeded');
+      stderr = (stderr + chunk).slice(-2000);
+    });
+    child.stdout.on('data', chunk => {
+      receivedBytes += chunk.length;
+      if (receivedBytes > 4*1024*1024) { child.stdout.destroy(); finish(privateError('Hermes output size limit exceeded; cancellation was not confirmed')); }
+    });
     child.on('close', code => {
       if (!settled) finish(privateError(`Hermes ACP exited with code ${code}. Check its installation, provider and permissions.`));
     });
     readline.createInterface({input:child.stdout, crlfDelay:Infinity}).on('line', line => {
       if (settled) return;
+      if (!cancelling && ++eventCount > 8192) return cancel('Hermes event limit exceeded');
       let message;
       try { message = JSON.parse(line); } catch { return; }
       if (message.method === 'session/update') {
@@ -67,8 +83,9 @@ export function runHermes({config, prompt, sessionId, signal, onText, env = {}})
         // Loading replays history; only emit chunks for this prompt.
         if (active && !cancelling && message.params.sessionId === session &&
             update?.sessionUpdate === 'agent_message_chunk' && update.content?.type === 'text') {
+          if (typeof update.content.text !== 'string' || text.length + update.content.text.length > 256*1024) return cancel('Hermes reply size limit exceeded');
           text += update.content.text;
-          onText?.(update.content.text);
+          try { onText?.(update.content.text); } catch { cancel('Hermes output delivery failed'); }
         }
       } else if (message.method && message.id !== undefined) {
         if (message.method === 'session/request_permission') {

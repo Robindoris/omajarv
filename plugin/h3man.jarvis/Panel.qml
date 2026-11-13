@@ -90,11 +90,25 @@ Ui.Panel {
         Text { textFormat: Text.PlainText; text: "Assistant name"; color: root.fg; font.family: root.fontFamily }
         Controls.TextField {
           id: assistantNameField; Layout.fillWidth: true; maximumLength: 80; color: root.fg; selectByMouse: true; Accessible.name: "Assistant name"
+          Keys.priority: Keys.BeforeItem
+          Keys.forwardTo: [assistantNameFieldPasteGuard]
+          PasteGuard {
+            id: assistantNameFieldPasteGuard
+            anchors.fill: parent
+            onPasteRequested: function(primary) { root.pasteInto(assistantNameField, 80, primary) }
+          }
           background: Rectangle { color: "transparent"; border.color: OmarchyCommons.Color.muted; radius: Style.cornerRadius }
         }
         Text { textFormat: Text.PlainText; text: "Personality prompt"; color: root.fg; font.family: root.fontFamily }
         Controls.TextArea {
           id: personalityField
+          Keys.priority: Keys.BeforeItem
+          Keys.forwardTo: [personalityFieldPasteGuard]
+          PasteGuard {
+            id: personalityFieldPasteGuard
+            anchors.fill: parent
+            onPasteRequested: function(primary) { root.pasteInto(personalityField, 8000, primary) }
+          }
           Layout.fillWidth: true
           Layout.preferredHeight: Style.space(150)
           wrapMode: TextEdit.Wrap
@@ -108,6 +122,13 @@ Ui.Panel {
         Text { textFormat: Text.PlainText; text: "Your name"; color: root.fg; font.family: root.fontFamily }
         Controls.TextField {
           id: userNameField; Layout.fillWidth: true; maximumLength: 80; color: root.fg; selectByMouse: true; Accessible.name: "Your name"
+          Keys.priority: Keys.BeforeItem
+          Keys.forwardTo: [userNameFieldPasteGuard]
+          PasteGuard {
+            id: userNameFieldPasteGuard
+            anchors.fill: parent
+            onPasteRequested: function(primary) { root.pasteInto(userNameField, 80, primary) }
+          }
           background: Rectangle { color: "transparent"; border.color: OmarchyCommons.Color.muted; radius: Style.cornerRadius }
         }
         Text { textFormat: Text.PlainText; Layout.fillWidth: true; text: "Applies to desktop and phone on your next request."; wrapMode: Text.WordWrap; color: OmarchyCommons.Color.muted; font.family: root.fontFamily }
@@ -174,7 +195,7 @@ Ui.Panel {
     root.qrTimedOut = false
     root.qrRequestUrl = root.link
     root.qrRequestLan = root.qrLan
-    qrProc.command = [root.jarvisBin, "qr", "--json", root.qrTailscale ? "--tailscale" : root.qrLan ? "--lan" : "--tunnel"]
+    qrProc.command = [root.jarvisBin, "native-command", "qr", "--json", root.qrTailscale ? "--tailscale" : root.qrLan ? "--lan" : "--tunnel"]
     qrProc.running = true
   }
   function setTarget(lan, tailscale) {
@@ -186,8 +207,16 @@ Ui.Panel {
     root.loadQr()
   }
   function command(payload) {
-    if (!desktop.running) { root.savingPersonality = false; root.notice = "Assistant is reconnecting. Try again."; desktop.running = true; return }
+    if (!desktop.running) { root.pasteTarget = null; root.savingPersonality = false; root.notice = "Assistant is reconnecting. Try again."; desktop.running = true; return }
     desktop.write(JSON.stringify(payload) + "\n")
+  }
+  property var pasteTarget: null
+  property int pasteLimit: 0
+  function pasteInto(field, limit, primary) {
+    if (!root.running || root.working || root.remoteBusy || root.pasteTarget) return
+    root.pasteTarget = field
+    root.pasteLimit = limit
+    root.command({action:"pasteClipboard", primary:primary, textOnly:field !== input})
   }
   function send() {
     var text = input.text.trim()
@@ -203,9 +232,18 @@ Ui.Panel {
   }
   function handleEvent(data) {
     if (data.event === "attachments") {
+      root.pasteTarget = null
       root.attachments = data.files || []
     } else if (data.event === "clipboardText") {
-      input.insert(input.cursorPosition, data.text || "")
+      var field = root.pasteTarget || input
+      var limit = root.pasteTarget ? root.pasteLimit : (root.status.limits ? root.status.limits.maxTextChars : 4000)
+      root.pasteTarget = null
+      if (field !== input && !personalityEditor.opened) return
+      var start = field.selectionStart
+      var end = field.selectionEnd
+      var text = String(data.text || "").slice(0, Math.max(0, limit - field.text.length + end - start))
+      field.remove(start, end)
+      field.insert(start, text)
     } else if (data.event === "ready") {
       root.command({ action: "readAloud", enabled: root.readAloud })
       root.command({ action: "history" })
@@ -244,6 +282,7 @@ Ui.Panel {
       if (snapshot.agent && snapshot.agent.modelSelectable) { snapshot.agent.model = selected; root.status = snapshot }
     } else if (data.event === "state") {
       root.assistantState = data.state || "Ready"
+      if (root.assistantState === "Ready") root.pasteTarget = null
       if (root.assistantState === "Thinking" || root.assistantState === "Listening" || root.assistantState === "Transcribing") root.lastOutcome = ""
       if (!root.working) root.command({ action: "history" })
     } else if (data.event === "heard") {
@@ -251,13 +290,14 @@ Ui.Panel {
     } else if (data.event === "token") {
       if (data.text) root.assistantState = "Responding"
       var followStream = transcript.atYEnd
-      root.streamText += data.text || ""
+      root.streamText = (root.streamText + (data.text || "")).slice(0, 256 * 1024)
       if (followStream) Qt.callLater(function() { transcript.positionViewAtEnd() })
     } else if (data.event === "done") {
       root.lastOutcome = "Reply complete"
       root.assistantState = "Finishing"
-      root.streamText = data.text || root.streamText
+      root.streamText = (data.text || root.streamText).slice(0, 256 * 1024)
     } else if (data.event === "error") {
+      root.pasteTarget = null
       root.savingPersonality = false
       root.modelBusy = ""
       root.notice = data.error || "Assistant failed"
@@ -287,7 +327,7 @@ Ui.Panel {
   function run(action) {
     if (actionProc.running) return
     root.busy = true
-    actionProc.command = [root.jarvisBin, action]
+    actionProc.command = [root.jarvisBin, "native-command", action]
     actionProc.running = true
   }
   function copyLink() {
@@ -309,17 +349,17 @@ Ui.Panel {
     command: [root.jarvisBin, "desktop"]
     stdinEnabled: true
     stdout: SplitParser { onRead: function(line) { try { root.handleEvent(JSON.parse(line)) } catch(e) { root.notice = "Invalid assistant response" } } }
-    stderr: StdioCollector { id: desktopErr; waitForEnd: true }
     onExited: function(code) {
       root.savingPersonality = false
+      root.pasteTarget = null
       root.assistantState = "Ready"
       if (code !== 0) root.lastOutcome = "Failed"
-      if (code !== 0) root.notice = "Assistant disconnected: " + (desktopErr.text || "restart the bridge").trim().slice(0, 120)
+      if (code !== 0) root.notice = "Assistant disconnected: restart the bridge"
     }
   }
   Process {
     id: setupProc
-    command: ["sh", "-c", "if [ -x \"$1\" ]; then exec \"$1\" setup-status; elif [ -f \"$2/server/setup.mjs\" ]; then exec node \"$2/server/setup.mjs\" --check; else printf '%s\\n' '{\"configured\":false,\"voiceReady\":false}'; fi", "jarvis-setup-status", root.jarvisBin, (Quickshell.env("HOME") || "") + "/.config/omarchy/plugins/h3man.jarvis"]
+    command: ["sh", "-c", "if [ -x \"$1\" ]; then exec \"$1\" native-command setup-status; elif [ -f \"$2/server/setup.mjs\" ]; then exec node \"$2/server/native-command.mjs\" setup-status; else printf '%s\\n' '{\"configured\":false,\"voiceReady\":false}'; fi", "jarvis-setup-status", root.jarvisBin, (Quickshell.env("HOME") || "") + "/.config/omarchy/plugins/h3man.jarvis"]
     stdout: StdioCollector { id: setupOut; waitForEnd: true }
     onExited: function(code) {
       try { root.setup = code === 0 ? JSON.parse(setupOut.text || "{}") : ({ configured: false, voiceReady: false }) }
@@ -330,7 +370,7 @@ Ui.Panel {
   Timer { interval: 15000; running: root.opened; repeat: true; onTriggered: { if (!setupProc.running) setupProc.running = true } }
   Process {
     id: statusProc
-    command: [root.jarvisBin, "status", "--json"]
+    command: [root.jarvisBin, "native-command", "status", "--json"]
     stdout: StdioCollector { id: statusOut; waitForEnd: true }
     onExited: function(code) {
       try { root.applyStatus(code === 0 ? JSON.parse(statusOut.text || "{}") : {}) }
@@ -606,6 +646,13 @@ Ui.Panel {
             Layout.fillWidth: true
             Controls.TextArea {
               id: input
+              Keys.priority: Keys.BeforeItem
+              Keys.forwardTo: [inputPasteGuard]
+              PasteGuard {
+                id: inputPasteGuard
+                anchors.fill: parent
+                onPasteRequested: function(primary) { root.pasteInto(input, root.status.limits ? root.status.limits.maxTextChars : 4000, primary) }
+              }
               Layout.fillWidth: true
               Layout.preferredHeight: Style.space(76)
               leftPadding: Style.space(10)
@@ -623,12 +670,6 @@ Ui.Panel {
               selectByMouse: true
               enabled: root.running
               background: Rectangle { color: "transparent"; radius: Style.cornerRadius; border.width: 1; border.color: input.activeFocus ? OmarchyCommons.Color.accent : OmarchyCommons.Color.muted }
-              Keys.onPressed: function(event) {
-                if (event.matches(StandardKey.Paste)) {
-                  event.accepted = true
-                  if (!root.working && !root.remoteBusy) root.command({action:"pasteClipboard"})
-                }
-              }
               Keys.onReturnPressed: function(event) {
                 if (!(event.modifiers & Qt.ShiftModifier)) { root.send(); event.accepted = true }
                 else event.accepted = false

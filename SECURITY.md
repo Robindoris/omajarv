@@ -94,3 +94,40 @@ provided as private local paths for agent tools; the bridge never executes or
 previews them. Attachment instructions mark contents as untrusted, but this is not
 malware scanning or a guarantee against prompt injection: the selected agent's
 permissions remain the boundary for any tool actions it chooses to take.
+
+
+Native clipboard and process limits (marketplace review #14823): keyboard paste
+and middle-click PRIMARY paste in chat and all three personality editors are
+intercepted before Qt's native paste handler. Right-click native paste menus are
+suppressed. Only explicit paste starts an external `wl-paste` process: text is
+limited to 64 KiB/5 seconds, MIME listings to 16 KiB/5 seconds, and images to
+10 MiB/10 seconds. The field's remaining character allowance applies before
+insertion. The helper kills its process group on timeout, overflow or cancellation.
+
+Piper help is limited to 4 seconds/64 KiB. Synthesis permits one active request,
+no waiting queue, 30 seconds per attempt, 64 KiB combined stdout/stderr, and a
+16 MiB kernel-enforced output-file limit through util-linux `prlimit`. A legacy
+flag retry occurs only after an unsuccessful exit, so total synthesis runtime
+is at most two attempts plus discovery. Temporary WAV files are removed after
+success or failure. Installation no longer automatically falls back to
+`piper-tts-bin`; this change does not attest provenance of user-installed binaries.
+
+The desktop bridge bounds each JSON response (2 MiB; audio 16 MiB), a chat stream
+(4 MiB total, 512 KiB pending block, 8192 events), accumulated reply (256 Ki
+characters), pending stdout (2 MiB), stdin lines (64 KiB) and simultaneous command
+dispatches (8, with no waiting queue). HTTP requests have absolute deadlines as
+well as idle timeouts. Finite native status/setup/QR/service helpers run outside
+the shell with a 2 MiB combined output cap and 15-second deadline (120 seconds
+for service lifecycle and Tailscale-enable commands). Playback has a 120-second deadline; recording
+has its configured duration plus a 5-second hard deadline and 16 MiB file cap.
+Exit/cancellation kills tracked process groups; recording finish gives SIGINT
+one second before SIGKILL. These limits cover the native bridge/helper paths,
+not an independent security audit of all dependencies or agent/provider queues.
+
+Agent CLI stdout is capped at 4 MiB per turn and stderr at 1 MiB; emitted text
+is capped at 256 Ki characters and cumulative-message sources at 4096. Hermes
+also caps events (8192), pending RPCs (8) and queued stdin (256 KiB); cancellation
+still uses ACP acknowledgement where the bounded transport remains available.
+An oversized raw Hermes transport is terminated with cancellation explicitly
+reported as unconfirmed. Outgoing HTTP chat streams cap total bytes (4 MiB),
+events (8192) and queued writes (512 KiB), aborting the turn on overflow.

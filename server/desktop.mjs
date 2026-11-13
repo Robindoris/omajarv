@@ -4,21 +4,27 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import https from 'node:https';
-import readline from 'node:readline';
-import { promisify } from 'node:util';
+import {StringDecoder} from 'node:string_decoder';
+import { boundedExec, stopChildren, managedSpawn, killGroup } from './lib/bounded-process.mjs';
+import { readClipboard } from './lib/clipboard.mjs';
 import { MAX_FILE, MAX_FILES } from './lib/attachments.mjs';
-import { spawn, execFile } from 'node:child_process';
 import { once } from 'node:events';
 import { loadConfig, paths, readToken } from './lib/config.mjs';
 const config = loadConfig();
 const token = readToken();
-const emit = (event, data = {}) => process.stdout.write(JSON.stringify({ event, ...data }) + '\n');
+const emit = (event, data = {}) => {
+  const line = JSON.stringify({event, ...data}) + '\n';
+  if (Buffer.byteLength(line) > 2*1024*1024 || process.stdout.writableLength + Buffer.byteLength(line) > 2*1024*1024) process.exit(1);
+  process.stdout.write(line);
+};
+process.stdout.on('error', () => process.exit(1));
 let operation = false, recording = null, playback = null, recordTimer = null, generation = 0;
 let readAloud = false;
+let recordStarting = false;
 let modelLookup = null;
 let profileRevision;
 let pendingAttachments = [];
-const exec = promisify(execFile);
+const exec = boundedExec;
 function emitAttachments() { emit('attachments', {files:pendingAttachments}); }
 async function uploadAttachment(name, bytes) {
   if (pendingAttachments.length >= MAX_FILES) throw new Error('Attach at most four files.');
@@ -47,19 +53,12 @@ async function chooseAttachments() {
     finally { if (fd !== undefined) fs.closeSync(fd); }
   }
 }
-async function pasteClipboard(imageOnly = false) {
+async function pasteClipboard(options) {
   try {
-    const listing = await exec('wl-paste', ['--list-types'], {timeout:5000, maxBuffer:16384});
-    const types = listing.stdout.split('\n');
-    const type = ['image/png', 'image/jpeg', 'image/webp'].find(t => types.includes(t));
-    if (type) {
-      const result = await exec('wl-paste', ['--no-newline', '--type', type], {encoding:'buffer', timeout:10000, maxBuffer:MAX_FILE});
-      return uploadAttachment('clipboard.' + ({'image/png':'png','image/jpeg':'jpg','image/webp':'webp'})[type], result.stdout);
-    }
-    if (imageOnly) throw new Error('No supported image in clipboard.');
-    const result = await exec('wl-paste', ['--no-newline', '--type', 'text'], {timeout:5000, maxBuffer:64*1024});
-    emit('clipboardText', {text:result.stdout.slice(0,config.maxTextChars)});
-  } catch { throw new Error('Cannot paste clipboard. Copy PNG, JPEG or WebP up to 10 MB, or paste text.'); }
+    const data = await readClipboard(exec, options);
+    if (data.bytes) return uploadAttachment(data.name, data.bytes);
+    emit('clipboardText', {text:data.text.slice(0,Math.max(config.maxTextChars, 8000))});
+  } catch { throw new Error('Cannot paste clipboard: transfer failed, exceeded its size limit or timed out.'); }
 }
 const requests = new Set();
 const temp = fs.mkdtempSync(path.join(paths.tmp, 'desktop-'));
@@ -69,22 +68,27 @@ function request(endpoint, body, contentType = 'application/json', onEvent) {
       path: '/api/' + endpoint, method: body === undefined ? 'GET' : 'POST',
       ca: fs.readFileSync(paths.certFile), headers: { 'x-jarvis-token': token, 'content-type': contentType } }, res => {
       if (onEvent && res.statusCode === 200) {
-        let buffer = '';
+        let buffer = '', total = 0, events = 0;
         res.setEncoding('utf8');
         res.on('data', chunk => {
+          total += Buffer.byteLength(chunk);
+          if (total > 4*1024*1024 || Buffer.byteLength(buffer) + Buffer.byteLength(chunk) > 512*1024) return req.destroy(new Error('Bridge stream size limit exceeded'));
           buffer += chunk;
           let end;
           while ((end = buffer.indexOf('\n\n')) >= 0) {
+            if (++events > 8192) return req.destroy(new Error('Bridge event limit exceeded'));
             const block = buffer.slice(0, end); buffer = buffer.slice(end + 2);
             const name = block.match(/^event: (.+)$/m)?.[1];
             const data = block.match(/^data: (.+)$/m)?.[1];
-            if (name && data) { try { onEvent(name, JSON.parse(data)); } catch (error) { reject(error); req.destroy(); } }
+            if (name && data) { try { onEvent(name, JSON.parse(data)); } catch (error) { reject(error); req.destroy(); return; } }
           }
         });
         res.on('end', () => resolve());
       } else {
         const chunks = [];
-        res.on('data', chunk => chunks.push(chunk));
+        let bytes = 0;
+        const limit = endpoint === 'tts' ? 16*1024*1024 : 2*1024*1024;
+        res.on('data', chunk => { bytes += chunk.length; if (bytes > limit) req.destroy(new Error('Bridge response size limit exceeded')); else chunks.push(chunk); });
         res.on('end', () => {
           const data = Buffer.concat(chunks);
           if (res.statusCode !== 200) {
@@ -97,7 +101,8 @@ function request(endpoint, body, contentType = 'application/json', onEvent) {
       res.on('error', reject);
     });
     requests.add(req);
-    req.on('close', () => requests.delete(req));
+    const deadline = setTimeout(() => req.destroy(new Error('Bridge deadline exceeded')), onEvent ? 260000 : 120000);
+    req.on('close', () => { clearTimeout(deadline); requests.delete(req); });
     req.setTimeout(onEvent ? 260000 : 120000, () => req.destroy(new Error('Bridge timed out')));
     req.on('error', reject);
     req.end(body);
@@ -115,7 +120,7 @@ async function speak(text, run) {
   if (run !== generation) return;
   const file = path.join(temp, 'reply.wav'); fs.writeFileSync(file, wav, { mode: 0o600 });
   emit('state', { state: 'Speaking' });
-  playback = spawn('pw-play', [file], { stdio: 'ignore' });
+  playback = managedSpawn('pw-play', [file], { stdio: 'ignore', timeout:120000 });
   const child = playback;
   const [code] = await once(child, 'exit');
   if (playback === child) playback = null;
@@ -129,8 +134,8 @@ async function chat(text, run) {
   await request('chat', JSON.stringify({ text, profileRevision, attachments:ids }), 'application/json', (event, data) => {
     if (event === 'meta') { pendingAttachments = pendingAttachments.filter(f => !ids.includes(f.id)); emitAttachments(); }
     emit(event, data);
-    if (event === 'token') reply += data.text || '';
-    if (event === 'done') reply = data.text || reply;
+    if (event === 'token') { reply += data.text || ''; if (reply.length > 256*1024) throw new Error('Reply size limit exceeded'); }
+    if (event === 'done') { reply = data.text || reply; if (reply.length > 256*1024) throw new Error('Reply size limit exceeded'); }
     if (event === 'error') failure = data.error;
   });
   if (failure) throw new Error(failure);
@@ -148,7 +153,9 @@ async function finishRecording() {
   const child = recording; recording = null;
   operation = true; const run = generation;
   try {
-    const exited = once(child, 'exit'); child.kill('SIGINT'); await exited;
+    const exited = once(child, 'exit');
+    const force = setTimeout(() => killGroup(child), 1000);
+    try { child.kill('SIGINT'); await exited; } finally { clearTimeout(force); }
     emit('state', { state: 'Transcribing' });
     const data = JSON.parse(await request('stt', fs.readFileSync(path.join(temp, 'input.wav')), 'audio/wav'));
     if (run !== generation) return;
@@ -160,7 +167,7 @@ async function finishRecording() {
 }
 async function dispatch(data) {
   if (data.action === 'attachFiles') return perform(async () => { emit('state', {state:'Choosing files'}); await chooseAttachments(); });
-  if (data.action === 'pasteClipboard') return perform(async () => { await pasteClipboard(data.imageOnly === true); });
+  if (data.action === 'pasteClipboard') return perform(async () => { await pasteClipboard({imageOnly:data.imageOnly === true, textOnly:data.textOnly === true, primary:data.primary === true}); });
   if (data.action === 'removeAttachment') return perform(async () => {
     if (!pendingAttachments.some(f => f.id === data.id)) return;
     await request('attachments/remove', JSON.stringify({id:data.id}));
@@ -188,12 +195,13 @@ async function dispatch(data) {
     });
   }
   if (data.action === 'history') return snapshot();
-  if (data.action === 'readAloud') { readAloud = data.enabled === true; if (!readAloud) playback?.kill('SIGTERM'); return; }
+  if (data.action === 'readAloud') { readAloud = data.enabled === true; if (!readAloud) killGroup(playback); return; }
   if (data.action === 'stop') {
     ++generation; operation = false; clearTimeout(recordTimer);
+    stopChildren();
     for (const req of requests) req.destroy(new Error('Stopped'));
-    recording?.kill('SIGINT'); recording = null;
-    playback?.kill('SIGTERM'); playback = null;
+    killGroup(recording); recording = null;
+    killGroup(playback); playback = null;
     await request('chat/stop', '{}');
     emit('state', { state: 'Ready' }); return;
   }
@@ -201,20 +209,38 @@ async function dispatch(data) {
   if (data.action === 'send') return perform(run => chat(data.text, run));
   if (data.action === 'record') {
     if (recording) return finishRecording();
-    if (operation) return;
-    ++generation;
-    const child = spawn('pw-record', ['--rate', '16000', '--channels', '1', '--format', 's16', path.join(temp, 'input.wav')], { stdio: 'ignore' });
-    recording = child;
-    child.on('error', error => { recording = null; emit('error', { error: error.message }); emit('state', { state: 'Ready' }); });
-    child.on('exit', code => { if (recording === child) { recording = null; clearTimeout(recordTimer); emit('error', { error: 'Microphone recording failed (' + code + ')' }); emit('state', { state: 'Ready' }); } });
-    emit('state', { state: 'Listening' });
-    recordTimer = setTimeout(() => finishRecording(), config.maxRecordingSec * 1000);
+    if (operation || recordStarting) return;
+    recordStarting = true;
+    const startGeneration = generation;
+    try {
+      ++generation;
+      const child = managedSpawn('prlimit', ['--fsize=16777216:16777216', '--', 'pw-record', '--rate', '16000', '--channels', '1', '--format', 's16', path.join(temp, 'input.wav')], { stdio: 'ignore', timeout:(config.maxRecordingSec + 5)*1000 });
+      recording = child;
+      child.on('error', error => { recording = null; emit('error', { error: error.message }); emit('state', { state: 'Ready' }); });
+      child.on('exit', code => { if (recording === child) { recording = null; clearTimeout(recordTimer); emit('error', { error: 'Microphone recording failed (' + code + ')' }); emit('state', { state: 'Ready' }); } });
+      emit('state', { state: 'Listening' });
+      recordTimer = setTimeout(() => finishRecording(), config.maxRecordingSec * 1000);
+    } finally { recordStarting = false; }
   }
 }
-readline.createInterface({ input: process.stdin }).on('line', line => {
-  try { Promise.resolve(dispatch(JSON.parse(line))).catch(error => emit('error', { error: error.message })); }
-  catch (error) { emit('error', { error: error.message }); }
-}).on('close', () => process.exit());
-process.on('exit', () => { recording?.kill('SIGINT'); playback?.kill('SIGTERM'); fs.rmSync(temp, { recursive: true, force: true }); });
+// Bound unterminated input and in-flight dispatches; never queue arbitrary commands.
+const decoder = new StringDecoder('utf8');
+let inputBuffer = '', inFlight = 0;
+process.stdin.on('data', chunk => {
+  inputBuffer += decoder.write(chunk);
+  let end;
+  while ((end = inputBuffer.indexOf('\n')) >= 0) {
+    const line = inputBuffer.slice(0, end); inputBuffer = inputBuffer.slice(end + 1);
+    if (Buffer.byteLength(line) > 64*1024 || inFlight >= 8) return process.exit(1);
+    ++inFlight;
+    Promise.resolve().then(() => dispatch(JSON.parse(line)))
+      .catch(error => emit('error', {error:error.message}))
+      .finally(() => { --inFlight; });
+  }
+  if (Buffer.byteLength(inputBuffer) > 64*1024) process.exit(1);
+});
+process.stdin.on('end', () => process.exit());
+process.on('exit', () => { stopChildren(); fs.rmSync(temp, { recursive: true, force: true }); });
 process.on('SIGTERM', () => process.exit());
+process.on('SIGINT', () => process.exit());
 emit('ready');

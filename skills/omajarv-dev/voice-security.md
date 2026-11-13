@@ -65,3 +65,11 @@ Keep the command in the foreground and allow the approval window to finish. The
 server waits for pending approvals even if the agent finishes its textual reply.
 Stop, cancellation, timeout and session close must release sockets and waiters.
 Do not detach a privileged operation or finish a turn while approval is waiting.
+
+
+Piper discovery/synthesis runs through bounded-process.mjs: preserve process-group
+cleanup, explicit deadlines, diagnostic byte caps, the one-request/no-queue lock,
+and the kernel file-size limit (`prlimit` from util-linux). Do not restore an
+automatic prebuilt Piper package fallback without resolving its provenance.
+Use `node tests/native-hardening.mjs` with fake Piper/clipboard owners to verify
+normal output, stalls, diagnostic flooding, descendant cleanup and file-size caps.

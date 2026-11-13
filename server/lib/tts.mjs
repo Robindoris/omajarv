@@ -5,11 +5,13 @@
 import fs from "node:fs";
 import { piperPath } from "./models.mjs";
 import path from "node:path";
-import { spawn } from "node:child_process";
+import { boundedExec } from "./bounded-process.mjs";
 import crypto from "node:crypto";
 import { paths } from "./config.mjs";
 import { findBin } from "./stt.mjs";
 
+const MAX_WAV = 16 * 1024 * 1024;
+let synthesisBusy = false;
 let piperBin = null;
 let piperFlavor = ""; // "dash" (-f/--length-scale) or "under" (--output_file/--length_scale)
 
@@ -28,26 +30,12 @@ export function ttsStatus(config) {
   };
 }
 
-function detectFlavor(bin) {
-  if (piperFlavor) return piperFlavor;
-  return new Promise((resolve) => {
-    const child = spawn(bin, ["--help"], { stdio: ["ignore", "pipe", "pipe"] });
-    let out = "";
-    const timer = setTimeout(() => {
-      child.kill();
-      piperFlavor = "dash";
-      resolve(piperFlavor);
-    }, 4000);
-    const collect = (chunk) => (out += chunk.toString());
-    child.stdout.on("data", collect);
-    child.stderr.on("data", collect);
-    child.on("close", () => {
-      clearTimeout(timer);
-      piperFlavor = /--output_file|--length_scale/.test(out) ? "under" : "dash";
-      piperBin = bin;
-      resolve(piperFlavor);
-    });
-  });
+async function detectFlavor(bin) {
+  if (piperFlavor && piperBin === bin) return piperFlavor;
+  const {stdout, stderr} = await boundedExec(bin, ["--help"], {timeout:4000, maxBuffer:64*1024});
+  piperFlavor = /--output_file|--length_scale/.test(stdout + stderr) ? "under" : "dash";
+  piperBin = bin;
+  return piperFlavor;
 }
 
 export function cleanForSpeech(text) {
@@ -66,6 +54,13 @@ export function cleanForSpeech(text) {
 }
 
 export async function synthesize(text, config, options = {}) {
+  if (synthesisBusy) throw new Error("Speech synthesis is busy. Try again shortly.");
+  synthesisBusy = true;
+  try { return await synthesizeOne(text, config, options); }
+  finally { synthesisBusy = false; }
+}
+
+async function synthesizeOne(text, config, options) {
   const spoken = cleanForSpeech(options.text ?? text);
   if (!spoken) throw new Error("Nothing to speak");
 
@@ -88,7 +83,18 @@ export async function synthesize(text, config, options = {}) {
 
   try {
     await runPiper(bin, base, spoken, outPath);
-    const wav = fs.readFileSync(outPath);
+    // Never allocate from an untrusted reported size; read a bounded snapshot.
+    const fd = fs.openSync(outPath, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
+    let wav;
+    try {
+      const stat = fs.fstatSync(fd);
+      if (!stat.isFile() || stat.size > MAX_WAV) throw new Error("Piper audio exceeds size limit");
+      const buffer = Buffer.alloc(MAX_WAV + 1);
+      let size = 0, count;
+      while (size < buffer.length && (count = fs.readSync(fd, buffer, size, buffer.length - size, null))) size += count;
+      if (size > MAX_WAV) throw new Error("Piper audio exceeds size limit");
+      wav = buffer.subarray(0, size);
+    } finally { fs.closeSync(fd); }
     if (wav.length < 44) throw new Error("piper produced no audio");
     return wav;
   } finally {
@@ -100,25 +106,18 @@ function fixtureConfigExists(model) {
   return fs.existsSync(`${model}.json`);
 }
 
-function runPiper(bin, args, text, outPath) {
-  const attempt = (finalArgs) =>
-    new Promise((resolve, reject) => {
-      const child = spawn(bin, finalArgs, { stdio: ["pipe", "pipe", "pipe"] });
-      let stderr = "";
-      child.stderr.on("data", (chunk) => (stderr += chunk.toString()));
-      child.on("error", reject);
-      child.on("close", (code) => {
-        if (code === 0 && fs.existsSync(outPath) && fs.statSync(outPath).size > 44) resolve();
-        else reject(new Error(`Local speech synthesis failed (exit ${code}). Check the Piper voice and installation.`));
-      });
-      child.stdin.end(text + "\n");
-    });
-
-  return attempt(args).catch((error) => {
-    // Older piper releases spell the output flag differently.
-    if (!piperFlavor || piperFlavor === "under") throw error;
-    const fallback = args.map((arg) => (arg === "-f" ? "--output_file" : arg === "--length-scale" ? "--length_scale" : arg));
+async function runPiper(bin, args, text, outPath) {
+  const attempt = async finalArgs => {
+    await boundedExec(bin, finalArgs, {input:text + "\n", timeout:30000,
+      maxBuffer:64*1024, fileSizeLimit:MAX_WAV});
+    if (!fs.existsSync(outPath) || fs.statSync(outPath).size <= 44) throw new Error("Piper produced no audio");
+  };
+  // Prefer the detected flag spelling; a limit/deadline failure is never retried.
+  const under = args.map(arg => arg === "-f" ? "--output_file" : arg === "--length-scale" ? "--length_scale" : arg);
+  return attempt(piperFlavor === "under" ? under : args).catch(error => {
+    if (piperFlavor !== "dash" || !Number.isInteger(error.code)) throw error;
+    fs.rmSync(outPath, {force:true});
     piperFlavor = "under";
-    return attempt(fallback);
+    return attempt(under);
   });
 }

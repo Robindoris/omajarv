@@ -365,15 +365,24 @@ async function handleApi(req, res, pathname, params) {
     });
     res.flushHeaders?.();
 
-    const send = (event, data) => {
-      if (res.writableEnded) return;
-      res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
-    };
-
     const abort = new AbortController();
+    let streamBytes = 0, streamEvents = 0;
+    const writeStream = frame => {
+      if (res.writableEnded || res.destroyed) return;
+      const bytes = Buffer.byteLength(frame);
+      streamBytes += bytes;
+      if (streamBytes > 4*1024*1024 || ++streamEvents > 8192 || res.writableLength + bytes > 512*1024) {
+        res.destroy();
+        abort.abort();
+        return;
+      }
+      res.write(frame);
+    };
+    const send = (event, data) => writeStream(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+
     activeAbort = abort;
     appendHistory(agent.id, "user", text + (files.length ? "\n[Attached: " + files.map(f => f.name).join(", ") + "]" : ""));
-    const heartbeat = setInterval(() => !res.writableEnded && res.write(": ping\n\n"), 15000);
+    const heartbeat = setInterval(() => writeStream(": ping\n\n"), 15000);
     // res 'close' means the phone navigated away or cancelled; a req 'close'
     // fires as soon as the body is read, which would abort every turn.
     res.on("close", () => {
@@ -396,6 +405,7 @@ async function handleApi(req, res, pathname, params) {
         sessionId: rememberedSession(agent.id),
         signal: abort.signal,
         onText: (chunk) => {
+          if (reply.length + chunk.length > 256*1024) throw new Error("Reply size limit exceeded");
           reply += chunk;
           send("token", { text: chunk });
         },
@@ -419,6 +429,9 @@ async function handleApi(req, res, pathname, params) {
       activeAbort = null;
       chatBusy = false;
       if (!res.writableEnded) res.end();
+      // Release completed agent descendants after pending sudo approvals, without
+      // sending a cancellation event into an already completed response.
+      abort.abort();
     }
     return;
   }
@@ -511,6 +524,7 @@ server.on("error", (error) => {
 
 const shutdown = (signal) => {
   log("shutting down:", signal);
+  activeAbort?.abort();
   sudoSession?.close();
   stopWhisperServer();
   stopTunnel();

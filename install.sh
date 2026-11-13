@@ -115,7 +115,7 @@ if $do_packages; then
   read -r -p "Install missing packages using pacman/AUR? [y/N]: " package_consent
   if [[ ! $package_consent =~ ^[Yy]([Ee][Ss])?$ ]]; then echo "Package installation skipped; rerun with --no-packages."; exit 1; fi
   need_sudo
-  PKGS=(whisper-cpp ffmpeg qrencode jq curl pipewire)
+  PKGS=(whisper-cpp ffmpeg qrencode jq curl pipewire util-linux)
   MISSING=()
   for pkg in "${PKGS[@]}"; do
     pacman -Qq "$pkg" &>/dev/null || MISSING+=("$pkg")
@@ -130,7 +130,7 @@ if $do_packages; then
   if ! have piper && ! have piper-tts; then
     if have yay; then
       echo "  AUR: piper-tts"
-      yay -S --needed --noconfirm piper-tts || yay -S --needed --noconfirm piper-tts-bin
+      yay -S --needed --noconfirm piper-tts || warn "Piper source build failed; speech remains unavailable. Install an independently verified Piper package to enable it."
     else
       warn "yay not found - install piper yourself: yay -S piper-tts"
     fi
