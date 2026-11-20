@@ -2,6 +2,14 @@ import {installCoreOrbit,wrapOrbitGroups} from './core-orbit';
 import {createCoreMotion} from './core-motion';
 import * as THREE from 'three';
 
+// Dispose while the owning context is still current (or lost), never after a
+// replacement context has allocated new GPU objects. CPU scene data can then GC.
+function releaseScene(root){
+ const geometries=new Set(),materials=new Set(),textures=new Set();
+ root.traverse(object=>{if(object.geometry)geometries.add(object.geometry);for(const material of [].concat(object.material||[])){materials.add(material);for(const value of Object.values(material))if(value?.isTexture)textures.add(value);}});
+ textures.forEach(texture=>texture.dispose());geometries.forEach(geometry=>geometry.dispose());materials.forEach(material=>material.dispose());
+}
+
 // Activity comes from the bridge; audio energy comes from its mic/playback analyser.
 const createFallbackReactor = function (canvas, getLevel) {
   let renderer;
@@ -41,6 +49,7 @@ const createFallbackReactor = function (canvas, getLevel) {
   const orbit=installCoreOrbit(canvas,null,camera,()=>reduced,{targets,cameraOrbit:true});
   const color=new THREE.Color(),target=new THREE.Color();
   function resize(){
+    if(disposed)return;
     const r=canvas.getBoundingClientRect(),w=Math.max(1,r.width),h=Math.max(1,r.height);
     renderer.setPixelRatio(Math.min(devicePixelRatio||1,1.75));
     renderer.setSize(w,h,false);camera.aspect=w/h;
@@ -90,8 +99,8 @@ const createFallbackReactor = function (canvas, getLevel) {
     renderer.render(scene,camera);
   }
   frame=requestAnimationFrame(draw);
-  window.addEventListener('pagehide',()=>{disposed=true;orbit.dispose();cancelAnimationFrame(frame);observer.disconnect();scene.traverse(o=>{o.geometry?.dispose();o.material?.dispose();});renderer.dispose();},{once:true});
-  return {setMode(next){motion.setMode(next);mode=next;},setReduced(value){reduced=value;}};
+  function dispose(){if(disposed)return;disposed=true;orbit.dispose();cancelAnimationFrame(frame);observer.disconnect();releaseScene(scene);renderer.dispose();}
+  return {dispose,setMode(next){motion.setMode(next);mode=next;},setReduced(value){reduced=value;}};
 };
 
 // Blender export: all seven clips play together; bridge state controls their tempo.
@@ -101,7 +110,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
-window.createThreeReactor = function (canvas, getLevel) {
+const createModelReactor = function (canvas, getLevel, onFallback) {
   let renderer;
   try { renderer = new THREE.WebGLRenderer({canvas, alpha:true, antialias:true, powerPreference:'low-power'}); }
   catch { return null; }
@@ -131,16 +140,12 @@ window.createThreeReactor = function (canvas, getLevel) {
   const motion=createCoreMotion();
   let workOrbits=[],actions=[];
   let mode='boot', reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
-  let disposed=false, frame=0, last=0, elapsed=0, energy=0, speed=.45, burst=0, mixer, model, fallback;
+  let disposed=false, frame=0, last=0, elapsed=0, energy=0, speed=.45, burst=0, mixer, model;
   const materials=new Set(), color=new THREE.Color(), target=new THREE.Color(), foreground=new THREE.Color(), background=new THREE.Color();
   let orbit={update(){},dispose(){}};
   let paletteReady=false;
-  function releaseModel(root) {
-    const geometries=new Set(), mats=new Set();
-    root.traverse(o=>{if(o.geometry)geometries.add(o.geometry);for(const m of [].concat(o.material||[]))mats.add(m);});
-    geometries.forEach(g=>g.dispose());mats.forEach(m=>m.dispose());
-  }
   function resize() {
+    if(disposed)return;
     const rect=canvas.getBoundingClientRect(), w=Math.max(1,rect.width), h=Math.max(1,rect.height);
     renderer.setPixelRatio(Math.min(devicePixelRatio||1,1.75));
     renderer.setSize(w,h,false);composer.setSize(w,h);
@@ -148,7 +153,7 @@ window.createThreeReactor = function (canvas, getLevel) {
   }
   const observer=new ResizeObserver(resize);observer.observe(canvas);resize();
   new GLTFLoader().load('/core.glb', gltf=>{
-    if(disposed){releaseModel(gltf.scene);return;}
+    if(disposed){releaseScene(gltf.scene);return;}
     model=gltf.scene;group.add(model);
     model.traverse(o=>{for(const m of [].concat(o.material||[])){
       materials.add(m);
@@ -167,15 +172,9 @@ window.createThreeReactor = function (canvas, getLevel) {
     for(const clip of gltf.animations)actions.push(mixer.clipAction(clip).play());
     canvas.dataset.coreModel='loaded';
     canvas.dataset.coreClips=String(gltf.animations.length);
-  },undefined,()=>{
-    if(disposed)return;
-    orbit.dispose();cancelAnimationFrame(frame);observer.disconnect();bloom.dispose();composer.dispose();renderer.dispose();
-    fallback=createFallbackReactor(canvas,getLevel);
-    fallback?.setMode(mode);fallback?.setReduced(reduced);
-    canvas.dataset.coreModel='fallback';
-  });
+  },undefined,()=>{if(!disposed)onFallback();});
   function draw(time) {
-    if(disposed||fallback)return;
+    if(disposed)return;
     frame=requestAnimationFrame(draw);
     if(document.hidden){last=time;return;}
     if(time-last<(reduced?250:32))return;
@@ -222,11 +221,39 @@ window.createThreeReactor = function (canvas, getLevel) {
     composer.render();
   }
   frame=requestAnimationFrame(draw);
-  window.addEventListener('pagehide',()=>{
-    disposed=true;orbit.dispose();cancelAnimationFrame(frame);
-    if(fallback)return;
-    observer.disconnect();mixer?.stopAllAction();if(model){mixer?.uncacheRoot(model);releaseModel(model);}
-    bloom.dispose();composer.dispose();renderer.dispose();
-  },{once:true});
-  return {setMode(next){motion.setMode(next);mode=next;fallback?.setMode(next);},setReduced(value){reduced=value;fallback?.setReduced(value);}};
+  function dispose(){
+    if(disposed)return;disposed=true;orbit.dispose();cancelAnimationFrame(frame);observer.disconnect();
+    mixer?.stopAllAction();if(model)mixer?.uncacheRoot(model);releaseScene(scene);
+    bloom.dispose();output.dispose();composer.dispose();renderer.dispose();
+  }
+  return {dispose,setMode(next){motion.setMode(next);mode=next;},setReduced(value){reduced=value;}};
+};
+
+// Three resets its renderer caches after restoration, but external composers,
+// passes and geometry listeners can retain objects from the lost context. Tear
+// the complete old instance down on loss, then construct a fresh instance.
+window.createThreeReactor=function(canvas,getLevel){
+ let current=null,mode='boot',reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
+ let lost=false,disposed=false,suspended=false,useFallback=false;
+ function release(){current?.dispose();current=null;}
+ function replace(){
+  if(disposed||lost||suspended)return;
+  release();canvas.dataset.coreModel=useFallback?'fallback':'loading';
+  current=useFallback?createFallbackReactor(canvas,getLevel):createModelReactor(canvas,getLevel,()=>{useFallback=true;replace();});
+  current?.setMode(mode);current?.setReduced(reduced);
+  canvas.dataset.coreContext=current?'ready':'unavailable';
+ }
+ function contextLost(event){event.preventDefault();if(disposed||lost)return;lost=true;canvas.dataset.coreContext='lost';release();}
+ function contextRestored(){if(disposed)return;lost=false;replace();}
+ function hide(event){if(event.persisted){suspended=true;release();}else dispose();}
+ function show(event){if(event.persisted&&!disposed){suspended=false;replace();}}
+ function dispose(){
+  if(disposed)return;disposed=true;release();canvas.dataset.coreContext='disposed';
+  canvas.removeEventListener('webglcontextlost',contextLost);canvas.removeEventListener('webglcontextrestored',contextRestored);
+  window.removeEventListener('pagehide',hide);window.removeEventListener('pageshow',show);
+ }
+ canvas.addEventListener('webglcontextlost',contextLost);canvas.addEventListener('webglcontextrestored',contextRestored);
+ window.addEventListener('pagehide',hide);window.addEventListener('pageshow',show);
+ replace();if(!current){dispose();return null;}
+ return {dispose,setMode(next){mode=next;current?.setMode(next);},setReduced(value){reduced=value;current?.setReduced(value);}};
 };

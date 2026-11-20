@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+import {createProjects} from './lib/projects.mjs';
+import {searchQuery,taskSearch,visibleConversation} from './lib/unified-search.mjs';
+import {createWorkspaceFiles,FILE_LIMIT} from './lib/files.mjs';
 import {createIPCamera} from './lib/ip-camera.mjs';
 // JARVIS LAN bridge.
 //
@@ -9,6 +12,7 @@ import {createIPCamera} from './lib/ip-camera.mjs';
 //
 //   node server/jarvis-server.mjs [--http] [--port N] [--verbose]
 
+import {videoRequest,searchVideos,linkedVideo} from './lib/youtube.mjs';
 import fs from "node:fs";
 import { timingSafeEqual } from "node:crypto";
 import http from "node:http";
@@ -28,12 +32,13 @@ import {createAgentActivity} from './lib/agent-activity.mjs';
 import { updateActiveModel, activeModel, agentStatus, forgetSessions, rememberedSession, rememberSession, runAgent } from "./lib/agent.mjs";
 import { listModels, modelAvailable, modelSelectable } from "./lib/agent-models.mjs";
 
-import { historyFor, appendHistory, clearHistory, conversations } from "./lib/history.mjs";
+import { historyFor, appendHistory as saveHistory, clearHistory, conversations, searchConversations } from "./lib/history.mjs";
 import { createAttachments, attachmentPrompt, MAX_FILE } from "./lib/attachments.mjs";
 import { createPersonality } from "./lib/personality.mjs";
 import { createSudoSession } from "./lib/sudo.mjs";
 import { publicAgentError, writePrivateFile } from "./lib/privacy.mjs";
 
+import {parseKanbanReport} from './lib/kanban-report.mjs';
 import { createKanbanRunner } from "./lib/kanban-runner.mjs";
 import {openPlanner} from './lib/planner.mjs';
 import { openKanban } from "./lib/postgres-kanban.mjs";
@@ -51,6 +56,17 @@ const useHttp = flag("--http") || process.env.JARVIS_HTTP === "1";
 
 ensureDirs();
 const config = loadConfig();
+const workspaceFiles=createWorkspaceFiles({workspace:config.workDir,stateDir:paths.stateDir});
+const projects=createProjects(paths.stateDir,{validateRoot:id=>{try{workspaceFiles.resolveRoot(id);return true;}catch{return false;}}});
+async function appendHistory(agent,role,text,metadata){
+  const result=await saveHistory(agent,role,text,metadata);
+  const current=(await conversations()).find(chat=>chat.active&&chat.agent===agent);
+  if(current)projects.linkConversation(current.id);
+  return result;
+}
+function executionConfig(){const current=projects.validateSelection(projects.active());return {...config,...(current?{workDir:workspaceFiles.resolveRoot(current.rootIds[0])}:{})};}
+function scopedBoard(board){return {...board,tasks:board.tasks.filter(t=>(t.projectId??null)===projects.active())};}
+function checkProjectContext(input){if(Object.hasOwn(input,'projectContext'))projects.checkContext(input.projectContext);}
 const ipCamera=createIPCamera(config);
 const personality = createPersonality(config);
 const kanban = await openKanban(paths.stateDir);
@@ -231,6 +247,7 @@ let uploadCount = 0;
 let voiceJobs = 0;
 let turnCount = 0;
 let chatBusy = false;
+let projectChanging=false,fileJobs=0;
 const agentActivity=createAgentActivity();
 let activeAbort = null;
 let sudoSession = null;
@@ -243,6 +260,7 @@ const boardRunner = createKanbanRunner({
   busy:()=>chatBusy || voiceJobs>0 || voiceSetup.isRunning() || personality.answering(),
   onError:()=>log('Unable to persist board run state; check configured storage availability.'),
   async execute(task,signal){
+    if((task.projectId??null)!==projects.active())throw Object.assign(new Error('Task project differs from the active project. Select its project before retrying.'),{safeToDisplay:true});
     chatBusy=true;activeAbort={abort:()=>boardRunner.stop(task.id)};
     agentActivity.begin('kanban',task);
     const agent=agentStatus(config);let reply='';
@@ -250,7 +268,7 @@ const boardRunner = createKanbanRunner({
       if(!useHttp)sudoSession=await createSudoSession({signal});
       await appendHistory(agent.id,'user',`Kanban task: ${task.title}\n${task.notes}`);
       const result=await runAgent({
-        config:{...config,systemPrompt:personality.prompt()+boardInstruction()+`\nYou are executing board task ${task.id}. Complete and verify this user-authorized task; do not queue or change its execution state. End with a clear result.`+(sudoSession?'\n'+sudoSession.instruction:'')},
+        config:{...executionConfig(),systemPrompt:personality.prompt()+boardInstruction()+`\nYou are executing board task ${task.id}. Complete and verify this user-authorized task; do not queue or change its execution state. End with a fenced jarvis-report JSON object containing outcome (completed, failed or blocked), changes, verification (commands and actual results), blockers and followUp (one suggestion), all text fields strings of at most 4000 characters. Only claim completed after verification; report denied edits or unfinished work as blocked. Never include credentials.`+(sudoSession?'\n'+sudoSession.instruction:'')},
         text:task.title+(task.notes?'\n\nTask notes:\n'+task.notes:''),
         sessionId:rememberedSession(agent.id),signal,env:sudoSession?.env,
         onActivity:phase=>agentActivity.phase(phase),
@@ -259,7 +277,7 @@ const boardRunner = createKanbanRunner({
       await sudoSession?.waitForPending();
       if(signal.aborted)throw new Error('Stopped');
       if(result.agent!==agent.id)await appendHistory(result.agent,'user',`Kanban task: ${task.title}\n${task.notes}`);
-      rememberSession(result.agent,result.session);await appendHistory(result.agent,'assistant',reply.trim(),{session:result.session,model:activeModel(config)});turnCount++;agentActivity.finish('completed');
+      rememberSession(result.agent,result.session);await appendHistory(result.agent,'assistant',reply.trim(),{session:result.session,model:activeModel(config)});turnCount++;const report=parseKanbanReport(reply);agentActivity.finish(report.outcome==='completed'?'completed':'error');return report;
     }catch(error){agentActivity.finish(signal.aborted?'interrupted':'error');await appendHistory(agent.id,'system',signal.aborted?'Kanban task interrupted.':publicAgentError(error)).catch(()=>{});throw error;}
     finally{sudoSession?.close();sudoSession=null;activeAbort=null;}
   }
@@ -269,6 +287,79 @@ const boardRunner = createKanbanRunner({
 
 async function handleApi(req, res, pathname, params) {
   if (!authorized(req, params)) return sendJson(res, 401, { ok: false, error: "Bad or missing token" });
+
+  if(pathname==='/api/search'){
+    if(req.method!=='GET')return sendJson(res,405,{error:'Method not allowed.'});
+    if(projectChanging)return sendJson(res,409,{error:'Wait for project switching to finish.'});
+    if(req.headers['sec-fetch-site']==='cross-site')return sendJson(res,403,{error:'Use a same-site search request.'});
+    try{
+      if(params.getAll('q').length>1)throw Object.assign(new Error('Use one search query.'),{status:400,safeToDisplay:true});
+      const query=searchQuery(params.get('q')||''),projectId=projects.active();
+      const groups={files:{results:[],truncated:false},tasks:{results:[],truncated:false},conversations:{results:[],truncated:false}};
+      if(query){
+        const roots=workspaceFiles.dispatch({action:'roots'}).roots.filter(r=>projects.allowedRoot(r.id)).map(r=>r.id);
+        groups.files=workspaceFiles.dispatch({action:'search',roots,query});
+        groups.tasks=taskSearch(query,scopedBoard(await kanban.view()).tasks);
+        groups.conversations=await searchConversations(query,{projectId,associations:projects.view().conversations});
+      }
+      if(projectChanging||projects.active()!==projectId)return sendJson(res,409,{error:'Project changed. Search again.'});
+      return sendJson(res,200,{query,projectId,groups});
+    }catch(error){return sendJson(res,error.status||503,{error:error.safeToDisplay?error.message:'Search is unavailable. Try again.'});}
+  }
+
+  if(pathname==='/api/projects'){
+    if(req.method==='GET')return sendJson(res,200,{...projects.view(),approvedRoots:workspaceFiles.dispatch({action:'roots'}).roots});
+    if(req.method!=='POST')return sendJson(res,405,{error:'Method not allowed.'});
+    if(req.headers['sec-fetch-site']==='cross-site'||!String(req.headers['content-type']||'').startsWith('application/json'))return sendJson(res,403,{error:'Use a same-site JSON request.'});
+    let ownsLock=false;
+    try{
+      const input=JSON.parse((await readBody(req,12000)).toString());
+      if(chatBusy||fileJobs||voiceJobs||voiceSetup.isRunning()||personality.answering())return sendJson(res,409,{error:'Finish the active request before changing projects.'});
+      chatBusy=true;ownsLock=true;projectChanging=true;
+      const board=await kanban.view();
+      if(board.tasks.some(t=>['queued','running'].includes(t.execution)))return sendJson(res,409,{error:'Stop or cancel queued/running tasks before changing projects.'});
+      if(input.revision!==projects.view().revision)return sendJson(res,409,{error:'Projects changed. Refresh before retrying.'});
+      if(input.action==='select'&&input.id!==projects.active()){
+        projects.validateSelection(input.id);
+        await clearHistory();forgetSessions();attachments.clear();personality.resetTranscript();turnCount=0;
+      }
+      if(input.action==='associateConversation'){
+        const conversation=(await conversations()).find(c=>c.id===input.id);
+        if(!conversation)return sendJson(res,404,{error:'Conversation no longer exists.'});
+        if(conversation.active)return sendJson(res,409,{error:'Start a new conversation before moving the previous conversation.'});
+      }
+      return sendJson(res,200,{...projects.update(input),approvedRoots:workspaceFiles.dispatch({action:'roots'}).roots});
+    }catch(error){return sendJson(res,error.status||400,{error:error.safeToDisplay?error.message:'Unable to update projects.'});}
+    finally{if(ownsLock){projectChanging=false;chatBusy=false;}}
+  }
+
+  if(pathname==='/api/files'||pathname==='/api/files/upload'||pathname==='/api/files/download'){
+    if(projectChanging)return sendJson(res,409,{error:'Wait for project switching to finish.'});
+    fileJobs++;
+    try{
+      if(req.headers['sec-fetch-site']==='cross-site')return sendJson(res,403,{error:'Use a same-site file request.'});
+      if(pathname==='/api/files/download'){
+        if(req.method!=='GET')return sendJson(res,405,{error:'Method not allowed.'});
+        if(!projects.allowedRoot(params.get('root')))return sendJson(res,403,{error:'This root is not associated with the active project.'});
+        const data=workspaceFiles.dispatch({action:'download',root:params.get('root'),path:params.get('path')});
+        res.writeHead(200,{'content-type':'application/octet-stream','content-length':data.bytes.length,'content-disposition':"attachment; filename*=UTF-8''"+encodeURIComponent(data.name),'cache-control':'no-store','x-content-type-options':'nosniff'});return res.end(data.bytes);
+      }
+      if(req.method!=='POST')return sendJson(res,405,{error:'Method not allowed.'});
+      if(pathname==='/api/files/upload'){
+        if(!String(req.headers['content-type']||'').startsWith('application/octet-stream'))return sendJson(res,400,{error:'Use a binary upload request.'});
+        if(!projects.allowedRoot(params.get('root')))return sendJson(res,403,{error:'This root is not associated with the active project.'});
+        const bytes=await readBody(req,FILE_LIMIT);
+        return sendJson(res,200,workspaceFiles.dispatch({action:'upload',root:params.get('root'),path:params.get('path'),overwrite:params.get('overwrite')==='true',version:params.get('version')||undefined},bytes));
+      }
+      if(!String(req.headers['content-type']||'').startsWith('application/json'))return sendJson(res,403,{error:'Use a same-site JSON request.'});
+      const input=JSON.parse((await readBody(req,2*1024*1024)).toString());
+      if(['download','upload','search'].includes(input?.action))return sendJson(res,400,{error:'Use the file transfer endpoint.'});
+      checkProjectContext(input);
+      if(!['roots','approve','reviewRoot'].includes(input?.action)&&!projects.allowedRoot(input.root))return sendJson(res,403,{error:'This root is not associated with the active project.'});
+      const result=workspaceFiles.dispatch(input);if(input.action==='roots')result.roots=result.roots.filter(root=>projects.allowedRoot(root.id));
+      return sendJson(res,200,result);
+    }catch(error){return sendJson(res,error.status||error.statusCode||400,{error:error.safeToDisplay?error.message:'Invalid file request or file size limit exceeded.'});}finally{fileJobs--;}
+  }
 
   if (pathname === "/api/attachments" && req.method === "POST") {
     if (uploadCount >= 2) return sendJson(res, 429, {error:"Too many uploads. Try again shortly."});
@@ -302,7 +393,7 @@ async function handleApi(req, res, pathname, params) {
     }catch(error){return sendJson(res,error.status||400,{error:error.safeToDisplay?error.message:'Invalid planner request.'});}
   }
 
-  if (pathname === "/api/kanban" && req.method === "GET") return sendJson(res,200,await kanban.view());
+  if (pathname === "/api/kanban" && req.method === "GET") return sendJson(res,200,params.get('scope')==='active'?scopedBoard(await kanban.view()):await kanban.view());
   if (pathname === "/api/kanban/morning" && ['GET','POST'].includes(req.method)) {
     try {
       if(req.method==='GET'){
@@ -337,13 +428,19 @@ async function handleApi(req, res, pathname, params) {
     }catch{return sendJson(res,400,{error:'Invalid stop request.'});}
   }
   if (pathname === "/api/kanban" && req.method === "POST") {
+    if(projectChanging)return sendJson(res,409,{error:'Wait for project switching to finish.'});
     if (!String(req.headers['content-type'] || '').startsWith('application/json') || req.headers['sec-fetch-site'] === 'cross-site') return sendJson(res,403,{error:"Invalid board request."});
     try {
       const input=JSON.parse((await readBody(req,8*1024*1024)).toString());
+      checkProjectContext(input);
+      if(input.action==='create'){if(Object.hasOwn(input,'projectId')&&input.projectId!==projects.active())return sendJson(res,409,{error:'Create tasks in the active project.'});input.projectId=projects.active();}
+      if(input.action==='edit'&&Object.hasOwn(input,'projectId'))projects.project(input.projectId);
+      if(input.id){const task=(await kanban.view()).tasks.find(t=>t.id===input.id);if(task&&(task.projectId??null)!==projects.active())return sendJson(res,409,{error:'Select this task’s project before changing it.'});}
+      if(input.action==='restore'&&projects.active()!==null)return sendJson(res,409,{error:'Switch to Ungrouped before restoring a full-board backup.'});
       if(['queue','advance'].includes(input.action)&&personality.answering())return sendJson(res,409,{error:'Finish Personality setup before running tasks.'});
       const board=await kanban.update(input);
       try{syncMorningTask(board);}catch{log('Could not refresh the saved morning task.');}
-      return sendJson(res,200,board);
+      return sendJson(res,200,input.projectContext!==undefined?scopedBoard(board):board);
     }catch(error){return sendJson(res,error.status||400,{error:error.status?error.message:'Unable to save the task board. Check disk space and try again.'});}
   }
   if (pathname === "/api/health") return sendJson(res, 200, { ok: true });
@@ -430,12 +527,14 @@ async function handleApi(req, res, pathname, params) {
   }
 
   if (pathname === "/api/conversations" && req.method === "GET") {
-    const rows=await conversations();
+    if(projectChanging)return sendJson(res,409,{error:'Project switching is in progress.'});
+    const rows=(await conversations()).filter(visibleConversation).map(chat=>({...chat,projectId:projects.association(chat.id)})).filter(chat=>params.get('scope')!=='active'||chat.projectId===projects.active());
     const id=params.get('id');
-    if(id){const chat=rows.find(row=>row.id===id);return sendJson(res,chat?200:404,chat||{error:'Conversation not found.'});}
+    if(id){const chat=rows.find(row=>row.id===id&&row.projectId===projects.active());return sendJson(res,chat?200:404,chat||{error:'Conversation not found.'});}
     return sendJson(res,200,{conversations:rows.map(({messages,...chat})=>({...chat,count:messages.length}))});
   }
   if (pathname === "/api/history" && req.method === "GET") {
+    if(projectChanging)return sendJson(res,409,{error:'Project switching is in progress.'});
     const agent = agentStatus(config);
     const messages = [...await historyFor(agent.id), ...personality.messages()].sort((a, b) => a.at - b.at);
     return sendJson(res, 200, { ok: true, agent: agent.id, messages, busy: chatBusy, activity:agentActivity.snapshot(), profile:personality.summary() });
@@ -467,8 +566,10 @@ async function handleApi(req, res, pathname, params) {
       if (!result.text) return sendJson(res, 200, { ok: false, error: "I did not catch that." , text: "", ms: result.ms });
       return sendJson(res, 200, { ok: true, text: result.text, ms: result.ms });
     } catch (error) {
-      log("speech recognition request failed");
-      return sendJson(res, 500, { ok: false, error: 'Speech recognition failed. Check the recording and local voice setup.' });
+      const known=new Set(['recording_empty','converter_missing','conversion_timeout','conversion_failed','recognizer_missing','model_missing','recognition_timeout','recognition_failed']);
+      const code=known.has(error.sttCode)?error.sttCode:error.statusCode===413?'recording_too_large':'speech_internal';
+      log('speech recognition request failed ('+code+')');
+      return sendJson(res,error.status||error.statusCode||500,{ok:false,code,error:publicAgentError(error,'Speech recognition failed. Check the recording and local voice setup.')});
     } finally { voiceJobs--; }
   }
 
@@ -496,6 +597,7 @@ async function handleApi(req, res, pathname, params) {
     } catch {
       return sendJson(res, 400, { ok: false, error: "Invalid JSON" });
     }
+    try{checkProjectContext(payload);}catch(error){return sendJson(res,error.status,{error:error.message});}
     const text = String(payload.text || "").trim().slice(0, config.maxTextChars);
     let files;
     try { files = attachments.resolve(payload.attachments); }
@@ -551,10 +653,21 @@ async function handleApi(req, res, pathname, params) {
     send("meta", { agent: agent.id, label: agent.label, session: rememberedSession(agent.id) });
 
     try {
+      const direct=!files.length&&linkedVideo(text,await historyFor(agent.id));
       await appendHistory(agent.id, "user", text + (files.length ? "\n[Attached: " + files.map(f => f.name).join(", ") + "]" : ""));
+      const request=!files.length&&videoRequest(text);
+      const query=!files.length&&(direct?.query||request?.query);
+      if(query){
+        let media,searchFailed=false;
+        try{media=direct||await searchVideos(query,{signal:abort.signal,chooseAny:request?.chooseAny,creator:request?.creator,channelUrl:request?.channelUrl});}
+        catch(error){if(abort.signal.aborted)throw error;searchFailed=true;reply=error.message;media={query,results:[],selected:null,error:reply};}
+        if(media){send('video',media);reply=searchFailed?reply:media.selected?'Opening '+media.results.find(v=>v.id===media.selected).title+'.':media.results.length?'Choose a YouTube video in the player.':'No YouTube videos found. Try a more specific title or topic.';}
+        await appendHistory(agent.id,'assistant',reply);
+        agentActivity.finish(searchFailed?'error':'completed');send('done',{text:reply,agent:agent.id});return;
+      }
       if (!useHttp) sudoSession = await createSudoSession({signal:abort.signal});
       const result = await runAgent({
-        config: {...config, systemPrompt:personality.prompt() + boardInstruction() + (sudoSession ? '\n\n' + sudoSession.instruction : '')},
+        config: {...executionConfig(), systemPrompt:personality.prompt() + boardInstruction() + (sudoSession ? '\n\n' + sudoSession.instruction : '')},
         env: sudoSession?.env,
         text: (text || "Please inspect the attached files.") + attachmentPrompt(files),
         images: files.filter(f => f.type === "image").map(f => f.path),
@@ -604,8 +717,8 @@ async function handler(req, res) {
   const pathname = url.pathname;
 
   res.setHeader("x-content-type-options", "nosniff");
-  res.setHeader("referrer-policy", "no-referrer");
-  res.setHeader("content-security-policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'");
+  res.setHeader("referrer-policy", "strict-origin-when-cross-origin");
+  res.setHeader("content-security-policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-src https://www.youtube-nocookie.com; frame-ancestors 'none'");
   res.setHeader("x-frame-options", "DENY");
 
   try {

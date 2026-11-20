@@ -47,13 +47,14 @@
   var manualVoiceView = false;
   var lastDefaultVoiceReady = null;
   window.jarvisWorkspace = function(page, options) {
+    if(!window.dispatchEvent(new CustomEvent('jarvis-before-workspace',{cancelable:true,detail:page})))return;
     if(page==='voice'||page==='conversation'){
       if(!options || !options.automatic)manualVoiceView=true;
       chooseView(page==='voice'?'voice':'chat');
     }
     document.body.dataset.workspace = page;
-    ['personalityDialog','kanban-panel','archive-panel','settings-panel','calendar-panel','notifications-panel'].forEach(function(id) {
-      document.getElementById(id).hidden = ({personalityDialog:'personality','kanban-panel':'kanban','archive-panel':'archive','settings-panel':'settings','calendar-panel':'calendar','notifications-panel':'notifications'})[id] !== page;
+    ['files-panel','personalityDialog','kanban-panel','archive-panel','settings-panel','calendar-panel','notifications-panel'].forEach(function(id) {
+      document.getElementById(id).hidden = ({'files-panel':'files',personalityDialog:'personality','kanban-panel':'kanban','archive-panel':'archive','settings-panel':'settings','calendar-panel':'calendar','notifications-panel':'notifications'})[id] !== page;
     });
     document.querySelectorAll('.view-switch button').forEach(function(button) {
       button.setAttribute('aria-current', ({chatView:'conversation',voiceView:'voice',personalityBtn:'personality'})[button.id] === page ? 'page' : 'false');
@@ -792,6 +793,8 @@
     } catch (e) { if(remoteActivity){remoteActivity=Object.assign({},remoteActivity,{phase:'unknown'});remoteBusy=false;renderCoreActivity();} }
     finally { clearTimeout(timer); historyLoading = false; }
   }
+
+  window.addEventListener('jarvis-project-changed',function(){generation++;historySignature='';if(el.transcript)el.transcript.innerHTML='';if(coreCaption)coreCaption.update('');loadHistory();loadStatus();});
 
   window.addEventListener('jarvis-voice-settings-saved', function () { loadStatus(); });
 
@@ -1640,7 +1643,7 @@
         var res = await apiFetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: cleanText, profileRevision:profile.revision, attachments:attached.map(function (f) { return f.id; }) }),
+          body: JSON.stringify({ ...(window.jarvisProjectContext!==undefined?{projectContext:window.jarvisProjectContext}:{}),text: cleanText, profileRevision:profile.revision, attachments:attached.map(function (f) { return f.id; }) }),
           signal: ctrl.signal
         });
         if (runId !== generation) return;
@@ -1664,6 +1667,7 @@
             if (data.session) setSession(String(data.session).slice(-4).toUpperCase());
             return true;
           }
+          if (eventName === 'video') { window.dispatchEvent(new CustomEvent('jarvis-video',{detail:data})); return true; }
           if (eventName === 'activity') {
             localAgentPhase=data.phase||'thinking';renderCoreActivity();return true;
           }

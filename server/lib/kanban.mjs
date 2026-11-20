@@ -4,6 +4,13 @@ import {randomUUID,createHash} from 'node:crypto';
 import {writePrivateFile} from './privacy.mjs';
 const columns=['todo','doing','done'];
 const executions=['idle','queued','running','completed','failed','interrupted'];
+const reportStates=['completed','failed','interrupted','blocked'];
+function cleanReport(value){
+ if(!value||!reportStates.includes(value.outcome)||typeof value.runId!=='string'||value.runId.length>100||!Number.isFinite(value.createdAt))fail('Invalid task report.');
+ const report={runId:value.runId,outcome:value.outcome,createdAt:value.createdAt};
+ for(const key of ['changes','verification','blockers','followUp'])report[key]=text(value[key]||'',4000,'report '+key);
+ return report;
+}
 const priorities=['low','normal','high','urgent'];
 const fail=(message,status=400)=>{throw Object.assign(new Error(message),{status,safeToDisplay:true});};
 export function localDate(date=new Date()) {return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;}
@@ -17,6 +24,7 @@ export function nextDueDate(value,recurrence,today=localDate()) {
 function text(value,max,label){if(typeof value!=='string'||value.length>max||value.includes('\0'))fail(`Invalid ${label} (maximum ${max} characters).`);return value;}
 function fields(input){
  const out={};
+ if('projectId' in input){if(input.projectId!==null&&(typeof input.projectId!=='string'||! /^[\w:-]{1,100}$/.test(input.projectId)))fail('Invalid project association.');out.projectId=input.projectId;}
  if('title' in input){out.title=text(input.title,200,'title').trim();if(!out.title)fail('A task title is required.');}
  if('notes' in input)out.notes=text(input.notes,8000,'notes');
  if('priority' in input){if(!priorities.includes(input.priority))fail('Invalid priority.');out.priority=input.priority;}
@@ -27,11 +35,12 @@ function fields(input){
 export function normalize(task){
  if(!task||typeof task.id!=='string'||!/^[\w:-]{1,100}$/.test(task.id)||!columns.includes(task.status))fail('Invalid task in backup.');
  const clean=fields(task);if(!clean.title)fail('Task title missing in backup.');
- const defaults={notes:'',priority:'normal',dueDate:'',recurrence:{frequency:'none',interval:1},execution:task.status==='done'?'completed':'idle',attempts:0,lastError:'',createdAt:task.updatedAt||Date.now()};
+ const defaults={projectId:null,notes:'',priority:'normal',dueDate:'',recurrence:{frequency:'none',interval:1},execution:task.status==='done'?'completed':'idle',attempts:0,lastError:'',createdAt:task.updatedAt||Date.now()};
  const result={...defaults,...clean,id:task.id,status:task.status,updatedAt:Number.isFinite(task.updatedAt)?task.updatedAt:Date.now()};
  if(executions.includes(task.execution))result.execution=task.execution;
  for(const key of ['createdAt','startedAt','completedAt','attempts'])if(Number.isFinite(task[key])&&task[key]>=0)result[key]=task[key];
  for(const key of ['runId','nextOccurrenceId','recurringFrom'])if(typeof task[key]==='string'&&task[key].length<=100)result[key]=task[key];
+ if(task.reports!==undefined){if(!Array.isArray(task.reports)||task.reports.length>20)fail('Invalid task reports.');result.reports=task.reports.map(cleanReport);}
  result.lastError=typeof task.lastError==='string'?task.lastError.slice(0,2000):'';
  return result;
 }
@@ -43,6 +52,10 @@ export function createKanban(directory,{now=()=>new Date(),storage,recover=true}
  try{backups=JSON.parse(fs.readFileSync(backupsFile,'utf8'));fs.chmodSync(backupsFile,0o600);}catch(error){if(error.code!=='ENOENT')throw error;}
  }
  const stamp=()=>now().getTime();
+ function report(task,outcome,detail={}){
+  if(!task.runId||task.reports?.some(r=>r.runId===task.runId))return;
+  task.reports=[...(task.reports||[]),cleanReport({runId:task.runId,outcome,createdAt:stamp(),changes:detail.changes||'No verified change summary recorded.',verification:detail.verification||'No verification recorded.',blockers:detail.blockers||'',followUp:detail.followUp||'Review the result before starting further work.'})].slice(-20);
+ }
  const snapshot=(value=board)=>({format:'jarvis-kanban',version:1,createdAt:stamp(),revision:value.revision,tasks:structuredClone(value.tasks)});
  function commit(tasks,request){
   const history=[...backups,snapshot()].slice(-20);
@@ -55,14 +68,14 @@ export function createKanban(directory,{now=()=>new Date(),storage,recover=true}
  }
  // Interrupted processes must never restart an old run or silently retry it.
  if(recover&&board.tasks.some(t=>['queued','running'].includes(t.execution))){
-  commit(board.tasks.map(t=>['queued','running'].includes(t.execution)?{...t,execution:'interrupted',lastError:'JARVIS restarted before this run finished. Review the task before retrying.',updatedAt:stamp()}:t));
+  commit(board.tasks.map(t=>{if(!['queued','running'].includes(t.execution))return t;const next={...t,execution:'interrupted',lastError:'JARVIS restarted before this run finished. Review the task before retrying.',updatedAt:stamp()};report(next,'interrupted',{blockers:next.lastError});return next;}));
  }
  function complete(task,tasks){
   task.status='done';task.execution='completed';task.completedAt=stamp();task.lastError='';
   if(task.recurrence.frequency!=='none'&&!task.nextOccurrenceId){
    if(tasks.length>=200)fail('Board is full. Remove a task before completing this recurring task.');
    const id=randomUUID(),next=normalize({...task,id,status:'todo',execution:'idle',attempts:0,lastError:'',createdAt:stamp(),updatedAt:stamp(),dueDate:nextDueDate(task.dueDate,task.recurrence,localDate(now()))});
-   delete next.runId;delete next.startedAt;delete next.completedAt;delete next.nextOccurrenceId;next.recurringFrom=task.id;tasks.push(next);task.nextOccurrenceId=id;
+   delete next.reports;delete next.runId;delete next.startedAt;delete next.completedAt;delete next.nextOccurrenceId;next.recurringFrom=task.id;tasks.push(next);task.nextOccurrenceId=id;
   }
  }
  const api={
@@ -106,10 +119,10 @@ export function createKanban(directory,{now=()=>new Date(),storage,recover=true}
     } else if(input.action==='cancel'){
      if(task.execution==='running')fail('The running agent must be stopped before its task can be retried.',409);
      if(task.execution!=='queued')fail('This task is not queued.',409);
-     task.execution='interrupted';task.lastError='Cancelled before starting.';
+     task.execution='interrupted';task.lastError='Cancelled before starting.';report(task,'interrupted',{blockers:task.lastError});
     } else if(input.action==='advance'){
      complete(task,tasks);
-     const next=tasks.find(t=>t.status==='todo'&&t.execution==='idle'&&t.id!==task.id);
+     const next=tasks.find(t=>t.status==='todo'&&t.execution==='idle'&&t.id!==task.id&&t.projectId===task.projectId);
      if(next){next.execution='queued';next.runId=randomUUID();next.lastError='';}
     } else fail('Invalid board action.');
     task.updatedAt=stamp();
@@ -121,12 +134,13 @@ export function createKanban(directory,{now=()=>new Date(),storage,recover=true}
    const tasks=structuredClone(board.tasks),task=tasks.find(t=>t.execution==='queued');if(!task)return null;
    task.execution='running';task.status='doing';task.attempts++;task.startedAt=stamp();task.updatedAt=stamp();commit(tasks);return structuredClone(task);
   },
-  finish(id,runId,state,error=''){
-   if(!['completed','failed','interrupted'].includes(state))fail('Invalid run result.');
+  finish(id,runId,state,error='',detail={}){
+   if(!reportStates.includes(state))fail('Invalid run result.');
    const tasks=structuredClone(board.tasks),task=tasks.find(t=>t.id===id);
    if(!task||task.runId!==runId||task.execution!=='running')return false;
-   task.execution=state;task.lastError=String(error).slice(0,2000);task.updatedAt=stamp();
-   if(state==='completed')complete(task,tasks);
+   task.execution=state==='blocked'?'failed':state;task.lastError=String(error).slice(0,2000);task.updatedAt=stamp();
+   report(task,state,{...detail,blockers:detail.blockers||error});
+   if(state==='completed'){complete(task,tasks);const next=tasks.find(t=>t.id!==task.id&&t.status==='todo'&&t.execution==='idle'&&t.projectId===task.projectId&&board.tasks.some(old=>old.id===t.id));if(next){next.execution='queued';next.runId=randomUUID();next.lastError='';next.updatedAt=stamp();}}
    commit(tasks);return true;
   },
  };

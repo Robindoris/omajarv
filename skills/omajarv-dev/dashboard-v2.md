@@ -11,6 +11,9 @@ use [api-v2.md](api-v2.md); detailed contracts live in the chosen repo's `docs/A
 | --- | --- |
 | Workspace navigation, saved-chat list, React portals | `frontend/src/dashboard.jsx` |
 | Kanban cards, filters, editor/restore dialogs, touch/keyboard moves | `frontend/src/kanban-board.jsx` |
+| Approved workspace file UI | `frontend/src/files-page.jsx` |
+| File approval, path security, transfers and recoverable trash | `server/lib/files.mjs` |
+| YouTube intent/search and integrated video playback | `server/lib/youtube.mjs`, `frontend/src/youtube-player.jsx` |
 | Voice settings and guided model setup | `frontend/src/voice-settings.jsx`, `voice-setup.jsx` |
 | Three.js reactor and live state/amplitude rendering | `frontend/src/reactor.js` |
 | Tailwind input and scoped dashboard styles | `frontend/src/dashboard.css` |
@@ -93,12 +96,16 @@ for the animated backdrop, which can conflict with Tailwind's `grid` utility.
 
 | Change | Useful checks |
 | --- | --- |
+| Reactor GPU context recovery and cached-page navigation | `node tests/reactor-browser.mjs`; `JARVIS_REACTOR_FALLBACK=1 node tests/reactor-browser.mjs` |
 | UI/styles, touch, keyboard, filters, restore, theme | `npm run build:frontend`; `node tests/theme-browser.mjs` |
+| Workspace file security, CRUD/transfers and responsive UI | `JARVIS_FILES_BROWSER=1 node tests/files.mjs` |
 | Board storage, recurrence, dates, idempotency, snapshots | `node tests/kanban.mjs` |
 | Queue serialization, failure, cancellation and retries | `node tests/kanban-runner.mjs` |
 | CLI, actual bridge/adapter queue, locks and PWA icons | `node tests/kanban-bridge.mjs` |
 | Voice patch validation and persistence | `node tests/voice-settings-unit.mjs`; `node tests/voice-settings.mjs` |
 | Model setup consent/progress/reuse/retry | `node tests/voice-setup.mjs`; `node tests/onboarding.mjs` |
+| YouTube parsing/search, player and chat/voice integration | `node tests/youtube.mjs`; `node tests/youtube-browser.mjs`; `node tests/youtube-bridge.mjs` |
+| Microphone format decoding and private STT errors | `node tests/stt.mjs`; `node tests/privacy-audit.mjs`; `node tests/voice-reply-release.mjs` |
 | Shared agent/history/auth/SSE/reset behavior | `node tests/integration.mjs` |
 | Theme parsing and atomic palette swaps | `node tests/theme.mjs` |
 
@@ -188,3 +195,14 @@ instance is reused; restart refuses an active reply or an unowned process. Keep 
 persistent terminal open while it runs. Optional JARVIS_DEV_DIR, JARVIS_DEV_ALIAS
 and JARVIS_DEV_PORT isolate additional checkouts/tests. `node tests/dev.mjs` verifies
 migration, duplicate prevention, restart and recovery after temporary alias removal.
+
+## Unified search
+
+`frontend/src/unified-search.jsx` renders the sidebar search field and typed groups.
+`GET /api/search` composes approved filename traversal, active-project task/report
+search and `searchConversations` through shared history storage. Source navigation
+uses target props on FilesPage/KanbanBoard and the existing saved conversation API.
+Keep file content unread during search and preserve project/exclusion boundaries.
+Run `JARVIS_SEARCH_BROWSER=1 node tests/unified-search.mjs` after search/navigation
+changes; PostgreSQL acceptance uses an isolated synthetic schema via
+`node tests/unified-search-postgres.mjs` with its documented private state setting.

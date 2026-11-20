@@ -146,6 +146,22 @@ export async function createPostgresHistory({connectionString,stateDir,schema='j
     }
     return [...chats.values()].map(chat=>({...chat,title:chat.messages.find(row=>row.role==='user')?.text.slice(0,90)||'Conversation'}));
   }
+  async function searchConversations(query,{projectId=null,associations={}}={}){
+    // Parameterized literal matching; no persistent index or transcript excerpts.
+    // Apply project and exclusion boundaries before matching message text.
+    const linked=Object.keys(associations),allowed=linked.filter(id=>associations[id]===projectId);
+    const result=await querySearch(query,projectId,linked,allowed);
+    return {results:result.rows.slice(0,20).map(r=>({id:r.id,agent:r.agent,title:r.title})),truncated:result.rows.length>20};
+  }
+  async function querySearch(needle,projectId,linked,allowed){
+    return query(`SELECT c.id,c.agent,COALESCE((SELECT left(m.text,90) FROM ${q('messages')} m WHERE m.conversation_id=c.id AND m.role='user' ORDER BY m.sequence LIMIT 1),'Conversation') AS title
+      FROM ${q('conversations')} c
+      WHERE (CASE WHEN $2::boolean THEN NOT(c.id=ANY($3::text[])) ELSE c.id=ANY($4::text[]) END)
+      AND NOT (c.metadata ? 'deletedAt' AND c.metadata->>'deletedAt' NOT IN ('null','false','0',''))
+      AND NOT (c.metadata @> '{"deleted":true}' OR c.metadata @> '{"excluded":true}' OR c.metadata @> '{"excludedFromSearch":true}' OR c.metadata @> '{"searchable":false}')
+      AND (strpos(lower(c.id),$1)>0 OR EXISTS(SELECT 1 FROM ${q('messages')} m WHERE m.conversation_id=c.id AND strpos(lower(m.text),$1)>0))
+      ORDER BY c.created_at DESC,c.id LIMIT 21`,[needle,projectId===null,linked,allowed]);
+  }
   async function clearHistory(){return transaction(client=>client.query(`UPDATE ${q('conversations')} SET active=false WHERE active`));}
   async function sessionFor(agent){const result=await query(`SELECT s.session FROM ${q('provider_sessions')} s JOIN ${q('conversations')} c ON c.id=s.conversation_id WHERE c.active AND s.agent=$1`,[agent]);return result.rows[0]?.session||'';}
   async function exportSnapshot(){
@@ -167,6 +183,6 @@ export async function createPostgresHistory({connectionString,stateDir,schema='j
       }
     });
   }
-  const store={migrate,importLegacy,appendHistory,historyFor,conversations,clearHistory,sessionFor,exportSnapshot,restoreSnapshot,close:()=>pool.end()};
+  const store={searchConversations,migrate,importLegacy,appendHistory,historyFor,conversations,clearHistory,sessionFor,exportSnapshot,restoreSnapshot,close:()=>pool.end()};
   return store;
 }

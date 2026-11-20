@@ -22,7 +22,7 @@ let prompt='';process.stdin.on('data',b=>prompt+=b);process.stdin.on('end',()=>{
  const run=(...args)=>JSON.parse(execFileSync(process.execPath,[${JSON.stringify(path.join(root,'server/kanban-cli.mjs'))},...args],{encoding:'utf8'}));
  const board=run('add','Agent fixture task');const id=board.tasks.find(t=>t.title==='Agent fixture task').id;
  run('move',id,'doing');run('move',id,'done');
- console.log(JSON.stringify({type:'item.completed',item:{type:'agent_message',text:'Board updated by agent tool.'}}));
+ console.log(JSON.stringify({type:'item.completed',item:{type:'agent_message',text:"Board updated by agent tool.\\n\`\`\`jarvis-report\\n{\\"outcome\\": \\"completed\\", \\"changes\\": \\"Board updated by agent tool.\\", \\"verification\\": \\"Fixture CLI returned successfully.\\", \\"blockers\\": \\"\\", \\"followUp\\": \\"Review board report search.\\"}\\n\`\`\`"}}));
 });`,{mode:0o755});
  const env={...process.env,HOME:home,PATH:path.join(home,'bin')+':'+process.env.PATH};
  server=spawn(process.execPath,[path.join(root,'server/jarvis-server.mjs'),'--http'],{env,stdio:['ignore','pipe','pipe']});
@@ -72,7 +72,7 @@ let prompt='';process.stdin.on('data',b=>prompt+=b);process.stdin.on('end',()=>{
  const waitState=async(id,state)=>{for(let i=0;i<100;i++){const task=JSON.parse((await api('/api/kanban')).text).tasks.find(t=>t.id===id);if(task.execution===state)return task;await new Promise(r=>setTimeout(r,50));}assert.fail('Timed out waiting for '+state);};
  const queued=JSON.parse((await mutate({action:'create',title:'Queued adapter fixture'})).text).tasks.at(-1);
  assert.equal((await mutate({action:'queue',id:queued.id})).status,200);
- const queuedDone=await waitState(queued.id,'completed');assert.equal(queuedDone.status,'done');assert.equal(queuedDone.attempts,1);
+ const queuedDone=await waitState(queued.id,'completed');assert.equal(queuedDone.status,'done');assert.equal(queuedDone.attempts,1);assert.equal(queuedDone.reports[0].outcome,'completed');assert.match(queuedDone.reports[0].verification,/CLI/);
  assert.equal(JSON.parse((await api('/api/history')).text).activity.phase,'completed');
  const failing=JSON.parse((await mutate({action:'create',title:'QUEUE_FAIL_FIXTURE'})).text).tasks.at(-1);
  await mutate({action:'queue',id:failing.id});assert.equal((await waitState(failing.id,'failed')).attempts,1);

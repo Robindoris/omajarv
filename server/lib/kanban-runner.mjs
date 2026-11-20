@@ -17,9 +17,9 @@ export function createKanbanRunner({board,busy,execute,onError=()=>{},onClaim=()
   if(!task){onClaim(false);return;}
   const controller=new AbortController();active={task,controller};
   try{
-   await execute(task,controller.signal);
+   const result=await execute(task,controller.signal);
    if(controller.signal.aborted)await board.finish(task.id,task.runId,'interrupted','Stopped by the user. Review before retrying.');
-   else await board.finish(task.id,task.runId,'completed');
+   else await board.finish(task.id,task.runId,result?.outcome||'completed',result?.blockers||'',result||{});
   }catch(error){
    try{await board.finish(task.id,task.runId,controller.signal.aborted?'interrupted':'failed',controller.signal.aborted?'Stopped by the user. Review before retrying.':error.safeToDisplay?error.message:'Agent request failed. Check the agent/provider and permissions, then retry once.');}catch(saveError){onError(saveError);}
   }finally{active=null;onClaim(false);}

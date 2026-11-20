@@ -429,3 +429,198 @@ Details return notificationDetails with occurrence-specific start/end, descripti
 and saved IANA timezone. Failures emit a sanitized notificationError. The read-only
 CLI command `jarvis notifications` returns one snapshot event for top-bar polling.
 See the calendar top-bar design and verification document for lifecycle and limits.
+
+### Runner completion reports
+
+Runner-owned `reports` on each task preserve its original notes. Each report records
+`runId`, `createdAt`, `outcome` (completed, failed, blocked or interrupted), `changes`,
+`verification`, `blockers` and `followUp`. The latest 20 reports are retained and
+included in backups; public edits cannot replace them. Reports are committed with
+the final transition, with duplicate finishes ignored. Restart recovery and queued
+cancellation also record interrupted outcomes. Blocked runs remain unfinished with
+failed execution. The runner requires a structured `jarvis-report` JSON response;
+missing or invalid reports cannot claim completion. Verification text is the agent’s
+reported evidence, not independent proof of its claims. Successful runs queue the
+first existing idle Next up task. New recurring occurrences remain idle.
+
+
+## Approved workspace files
+
+All three endpoints require the bridge credential in `X-Jarvis-Token` and reject
+cross-site requests. API errors contain sanitized application messages. Downloads
+are attachments with `no-store` and `nosniff`; contents are never rendered as HTML.
+
+- POST `/api/files` (JSON): `action: roots` returns approved root IDs, labels,
+  approval availability and limits. `approve, confirm:true` explicitly approves the
+  locally configured `workDir`; additional existing roots can be reviewed with `reviewRoot,path` (absolute path),
+  then explicitly approved with `approve,path,identity,confirm:true`. The reviewed
+  directory identity must still match. Up to 20 roots are stored.
+- Other JSON actions require `root` and a workspace-relative `path`: `list`, `stat`,
+  `preview`, `mkdir`, `write` (`text`), `trash`, `move` or `copy` (`to`).
+  `trashList` returns recovery IDs; `restore` takes `id` and refuses collisions.
+- Editing, moving, copying and trashing use the reviewed item's `version`.
+  Overwrites require `overwrite:true` and the destination's version (`targetVersion`
+  for move/copy). Replaced files also go to recoverable Trash. Conflicts return 409;
+  clients retain drafts and require review rather than silently retrying.
+- POST `/api/files/upload?root=ID&path=REL` accepts raw `application/octet-stream`;
+  overwrite parameters are `overwrite=true&version=VERSION`.
+- GET `/api/files/download?root=ID&path=REL` returns raw attachment bytes.
+
+Limits: 10 MiB/file, 256 KiB UTF-8 preview/edit, 2000 directory entries, and
+1000 items/32 MiB per recursive operation. Search and sorting apply to the current
+folder. Folder overwrites, symlinks (including internal links), hardlinks and
+special files are refused. Known credential names and recognizable credential
+content are blocked. Approval state is private; `.jarvis-trash` is private inside
+the approved root. Trash has a 2000-entry storage cap and no automatic purge.
+See `docs/FILES-IMPLEMENTATION.md` for verification and remaining limitations.
+
+### YouTube requests in chat and voice
+
+The authenticated `POST /api/chat` stream recognizes explicit requests such as
+“play a video about space”, “find me a YouTube video called …”, and “play … on
+YouTube”. Voice transcripts use this same route. Requests with attachments retain
+the normal agent flow. Search uses the host's `yt-dlp` executable with configuration
+files disabled, no downloads, a 25-second timeout and bounded output. No API key
+is required. Missing executable/network failures return a sanitized chat reply.
+
+A `video` SSE event contains `{query, results:[{id,title,channel}], selected}`.
+Only a unique exact title or a single result is selected automatically. Otherwise
+the browser presents choices. The responsive player uses a YouTube privacy-enhanced
+embed with native playback controls, inline phone playback, and a visible tap-to-play
+fallback and external link for unavailable/embedding-disabled videos. Closing it
+removes the iframe. Search results are transient browser state; chat history stores
+the request and response. YouTube frames require the restricted CSP frame source
+and an origin-only cross-origin referrer. No bridge token is passed to YouTube.
+
+
+Player follow-up: search failures emit `video` with `error` and empty results, so
+an old video does not keep playing after a failed replacement request. The player
+validates result IDs and listens only to messages from its current privacy-enhanced
+YouTube iframe and exact origin. No third-party script runs in the authenticated
+parent page. Native controls remain available alongside Play/Pause/Restart/Retry;
+message-based status reports embed errors and blocked autoplay when provided by
+YouTube. A bounded loading fallback also directs the user to native Play. Iframe
+height is at least 200px at narrow phone widths. Project switching clears playback.
+
+A single direct YouTube video URL (watch/youtu.be/shorts/live/embed), including
+ordinary surrounding text, automatically emits a selected `video` SSE result.
+No special playback phrase is required. Contextual “open it” or “play that” requests
+resolve a single link from recent user messages in the active conversation; they
+do not select assistant links, ambiguous links or unrelated older conversations. Only approved YouTube hostnames and 11-character video IDs are accepted;
+tracking parameters and URL credentials are never forwarded. This path uses neither
+search nor an agent/browser tool. Summarization and other non-playback intent retain
+the ordinary agent route. Direct links initially use a video-ID label; player
+metadata can replace it with the reported title.
+
+
+### Speech transcription errors
+
+`POST /api/stt` accepts nonempty encoded recordings, including valid compressed
+clips below 1200 bytes; encoded byte size is not a duration check. FFmpeg still
+validates/normalizes input with network protocols blocked. Empty recordings return
+400, undecodable recordings 422, missing local tools/model 503 and conversion or
+recognition timeouts 504. Failures include a stable `code` and sanitized actionable
+`error`. Logs contain only the failure category, never recordings/transcripts,
+model paths or raw tool diagnostics. Readiness now also requires FFmpeg and a
+nonempty regular model file.
+
+Verification: `node tests/stt.mjs` passed real FFmpeg conversion of 1010-byte WebM,
+393-byte Ogg and 957-byte M4A fixtures, plus WAV, error categories, cleanup and
+missing-converter readiness. Whisper output is mocked in that regression test.
+A separate synthetic 946-byte WebM passed the actual configured dev Whisper model
+and conversion pipeline in 832 ms; no speech contents were logged. Privacy audit,
+voice reply-release and isolated chat/voice YouTube bridge regressions passed.
+These checks identify a reproducible rejection bug; earlier generic log lines alone
+cannot establish whether every reported failure had that cause.
+
+Natural any-video requests such as “find robindorak and play video any” and “play
+any video from robindorak” are supported. `videoRequest` extracts the query and
+explicit permission to choose any result. Matching creator handles/display names
+are preferred; an explicit channel/from/by request auto-selects only a matching
+creator. If matching metadata is unavailable, choices remain visible. An ordinary
+topic request still requires a choice when its results are ambiguous.
+
+Channel URLs such as `https://www.youtube.com/@robindorak` and validated
+`/channel/UC...` links are also supported. “Open any video from this chanel URL”
+routes to a bounded listing of that channel's `/videos` tab (five entries), then
+emits a selected video to the player. A bare channel URL presents choices. Arbitrary
+hosts, embedded credentials and multiple ambiguous URLs are refused. Channel-list
+failures appear as a sanitized player/search error rather than an agent claim of
+missing player access.
+
+### Unified workspace search
+
+Authenticated `GET /api/search?q=literal` returns `{query,projectId,groups}` with
+`files`, `tasks` and `conversations` groups, each `{results,truncated}`. Query text
+is trimmed, case insensitive, literal (no regular expressions or SQL wildcards),
+and at most 160 printable characters; duplicate query parameters are rejected.
+Empty queries return empty groups without reading sources. Responses are no-store;
+cross-site requests and unsupported methods are rejected.
+
+Search uses the active project's task/conversation associations and approved file
+roots. File results contain only names and relative source locators; search never
+reads file contents. Existing file protection and descriptor-pinned traversal hide
+protected entries, symlinks, hard links and special files. Traversal stops at 20
+results, 4,000 entries, 100 folders, depth eight or a 150ms soft deadline and reports
+truncation. An unavailable/oversized subtree also reports truncation.
+
+Task IDs, titles, notes and structured completion report fields are searchable.
+Conversations reuse the shared history storage boundary: the inspected checkout
+had no pre-existing conversation-search implementation to reuse. PostgreSQL uses
+parameterized literal matching, existing statement timeouts, and LIMIT 21 (20
+results plus truncation). JSON uses its existing in-memory store with scan limits
+of 5,000 rows and two million characters. No search index, embeddings, transcript
+excerpt cache or file content index is created. JSON may return partial results at
+its scan cap; the UI shows a refinement prompt.
+
+Deleted/excluded conversation metadata (`deleted`, `deletedAt`, `excluded`,
+`excludedFromSearch`, or `searchable:false`) is omitted from search and conversation
+retrieval. No deletion/exclusion management API is introduced. Fresh requests read
+the current authoritative data. Visible search queries refresh every five seconds,
+and changing query/project cancels stale requests. Source navigation revalidates
+access using existing file/conversation APIs or a fresh scoped task board.
+
+Verification: `JARVIS_SEARCH_BROWSER=1 node tests/unified-search.mjs` covers unit,
+authenticated API and desktop/mobile source navigation. PostgreSQL search is tested
+with `JARVIS_SEARCH_DATABASE_STATE=PRIVATE_STATE_DIRECTORY node tests/unified-search-postgres.mjs`
+in an isolated disposable schema containing only synthetic messages.
+
+Implementation verification (2026-11-20): frontend build passed; search unit/API
+and Chromium 1280/390/320px acceptance passed, including Tab/Enter task activation,
+file preview and saved-chat navigation, Escape and five-second deletion refresh.
+PostgreSQL search acceptance passed in a disposable schema, including literal
+metacharacters, project boundaries, exclusion/deletion updates and result limits.
+Existing file storage/HTTP regression checks passed. The unmodified general
+integration suite stopped at its historical `no-referrer` assertion because the
+checkout already serves `strict-origin-when-cross-origin`. A temporary copy with
+only that expected header updated passed the remaining integration checks; the
+original test and header were preserved. Syntax checks and `git diff --check`
+passed. The busy development bridge was not restarted; load server changes at the
+next idle restart and refresh the frontend. Existing unrelated source edits were
+preserved, and the running task's board lifecycle was not changed manually.
+
+
+### Project workspaces
+
+Authenticated `GET /api/projects` returns the shared revision, activeId, project
+metadata, conversation associations and approvedRoots. JSON POST requires the
+reviewed revision and action `create` (name, rootIds), `select` (id or null for
+Ungrouped), or `associateConversation` (id, projectId). Roots must already be
+approved and available. Projects persist privately across bridge restarts.
+
+Selecting another project archives current conversations and resets provider
+sessions. Switching is rejected during chat, file operations, speech/setup, or
+queued/running board work. Desktop and phone share the active selection. Existing
+chats and tasks remain Ungrouped; association does not relocate files. Approved
+roots can be shared by projects, so this is organization rather than process
+isolation. Agents retain their existing permissions.
+
+Tasks acquire the active project on creation. Existing idle tasks can be assigned
+with `edit` and projectId; archived conversations can be assigned through projects.
+`scope=active` filters board and conversation lists. File operations reject roots
+outside the active project. Browser mutations include projectContext to reject
+stale client selections. Older clients without context remain supported.
+
+Verification: `node tests/projects.mjs` covers approved-root rejection, auth,
+stale context, legacy data, task/chat/file association, restart persistence,
+conversation reassignment and switching conflicts during chat and queued work.
