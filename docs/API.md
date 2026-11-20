@@ -260,6 +260,9 @@ restore, advance. Queue creates a unique run ID. Queued/running tasks cannot be
 edited, moved, deleted or queued twice. `advance` completes the specified task and
 queues the first idle task in Next up, if present.
 
+`GET /api/kanban/morning` returns `{task:null}` or `{task:{id,title,notes}}`.
+`POST /api/kanban/morning` with `{id,revision}` selects an unfinished card with notes that is not queued or running; send `id:null` to clear it. A stale board revision is rejected. This private host-local choice does not change board revision, queue the card or authorize edits. It remains readable by the morning runner while the bridge is offline.
+
 `POST /api/kanban/stop` with `{id}` aborts the actual running agent. A stopped run
 becomes Interrupted only after the adapter releases it. Board execution shares the
 chat/speech lock, agent session and authenticated bridge history. A successful agent
@@ -414,3 +417,15 @@ over the authenticated private socket. Tests: `node tests/planner.mjs`, optional
 with `JARVIS_TEST_DATABASE_ENV` for disposable PostgreSQL schemas; authenticated API
 coverage in `tests/kanban-bridge.mjs`; desktop and phone interaction/layout coverage
 in `tests/theme-browser.mjs`. No real events or provider requests are used in tests.
+
+### Native calendar notification consumer
+
+The native plugin uses the same authenticated notification routes and persistent
+IDs as the dashboard. The desktop JSON protocol accepts notifications,
+notificationRead, notificationDismiss, notificationSnooze and notificationDetails;
+actions take a notification id, with minutes (5, 15 or 60) for snooze. Snapshots
+are calendar-only and return a notifications event with items and unread count.
+Details return notificationDetails with occurrence-specific start/end, description
+and saved IANA timezone. Failures emit a sanitized notificationError. The read-only
+CLI command `jarvis notifications` returns one snapshot event for top-bar polling.
+See the calendar top-bar design and verification document for lifecycle and limits.

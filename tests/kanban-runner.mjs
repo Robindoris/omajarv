@@ -21,3 +21,15 @@ try{
  assert.equal(board.view().tasks[1].execution,'failed');assert.ok(!board.view().tasks[1].lastError.includes('PRIVATE_PROVIDER_DIAGNOSTIC'));
  console.log('PASS: serialized execution, shared busy lock, completion, cancellation, safe errors and no automatic retries.');
 }finally{runner?.close();fs.rmSync(dir,{recursive:true,force:true});}
+
+// A slow database poll with no queued work must not reserve chat.
+{
+ let release, locked=false;
+ const empty=new Promise(resolve=>{release=resolve;});
+ const probe=createKanbanRunner({board:{view:()=>empty,startNext:async()=>{await empty;return null;}},busy:()=>locked,onClaim:value=>{locked=value;},execute:()=>assert.fail('no task to run')});
+ try {
+  const polling=probe.tick();
+  assert.equal(locked,false,'idle board polling must not block chat');
+  release({tasks:[]});await polling;
+ } finally {release({tasks:[]});probe.close();}
+}

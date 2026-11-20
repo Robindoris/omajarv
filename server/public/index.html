@@ -14,8 +14,8 @@
   <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
   <link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png">
   <link rel="apple-touch-icon" sizes="192x192" href="/icon-192.png">
-  <link rel="stylesheet" href="jarvis.css?v=dashboard-1dfebff09c13">
-  <link rel="stylesheet" href="dashboard.css?v=dashboard-1dfebff09c13">
+  <link rel="stylesheet" href="jarvis.css?v=dashboard-cd642b777e23">
+  <link rel="stylesheet" href="dashboard.css?v=dashboard-cd642b777e23">
   <link rel="stylesheet" href="/theme.css">
 </head>
 <body data-state="boot" data-view="chat">
@@ -126,10 +126,16 @@
 
     <footer class="controls">
       <div class="ptt-row">
-        <button class="icon-btn" id="stopBtn" type="button" aria-label="Stop speaking and cancel the current response" title="Stop / cancel">
+        <button class="icon-btn" id="muteBtn" type="button" aria-label="Mute voice output" aria-pressed="false" title="Mute voice output">
           <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path d="M11 5 6.5 9H3v6h3.5L11 19V5Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
-            <path d="m16 9 5 6M21 9l-5 6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+            <path class="sound-waves" d="M15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+            <path class="sound-muted" d="m16 9 5 6M21 9l-5 6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+          </svg>
+        </button>
+        <button class="icon-btn" id="stopBtn" type="button" aria-label="Stop recording, speaking, and cancel the current response" title="Stop / cancel">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/>
           </svg>
         </button>
 
@@ -191,7 +197,7 @@
   </div>
 
   <noscript><div class="noscript">J.A.R.V.I.S. requires JavaScript.</div></noscript>
-  <script src="dashboard.js?v=dashboard-1dfebff09c13"></script>
-  <script src="jarvis.js?v=dashboard-1dfebff09c13"></script>
+  <script src="dashboard.js?v=dashboard-cd642b777e23"></script>
+  <script src="jarvis.js?v=dashboard-cd642b777e23"></script>
 </body>
 </html>

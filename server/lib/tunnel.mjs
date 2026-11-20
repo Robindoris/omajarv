@@ -10,6 +10,7 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { paths } from "./config.mjs";
 import { findBin } from "./stt.mjs";
+import { writePrivateFile } from "./privacy.mjs";
 
 const URL_PATTERN = /https:\/\/[a-z0-9-]+\.trycloudflare\.com/;
 const MAX_RESTARTS = 20;
@@ -60,14 +61,23 @@ function launch() {
   lastError = "";
   clearUrlFile();
 
-  const port = configRef.port;
+  // Quick Tunnels require --url or --hello-world to select that mode, but
+  // configured ingress takes precedence. Use the latter so there is no TCP
+  // origin to fall back to: requests must reach our protected socket.
+  const ingressFile = path.join(paths.stateDir, "tunnel-ingress.json");
+  try {
+    writePrivateFile(ingressFile, JSON.stringify({
+      ingress: [{ service: `unix:${paths.serveSocket}` }],
+    }) + "\n");
+  } catch {
+    state = "error";
+    lastError = "Could not prepare private Cloudflare ingress";
+    return;
+  }
   const args = [
     "tunnel",
-    "--url",
-    `https://localhost:${port}`,
-    // Trust this bridge certificate rather than any replacement loopback server.
-    "--origin-ca-pool", paths.certFile,
-    "--origin-server-name", "localhost",
+    "--config", ingressFile,
+    "--hello-world",
     "--no-autoupdate",
   ];
 

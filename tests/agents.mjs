@@ -6,6 +6,8 @@ import path from 'node:path';
 const home = fs.mkdtempSync(path.join(os.tmpdir(), 'jarvis-agents-'));
 const oldHome = process.env.HOME;
 const oldPath = process.env.PATH;
+const oldAgentFile=process.env.JARVIS_OMARCHY_AGENT_FILE;
+process.env.JARVIS_OMARCHY_AGENT_FILE=path.join(home,'.config/omarchy/defaults/agent');
 process.env.HOME = home;
 process.env.PATH = path.join(home, 'bin') + ':' + oldPath;
 process.env.JARVIS_AGENT_TEST_HOME = home;
@@ -75,7 +77,19 @@ if (id === 'hermes') {
     assert.deepEqual(agentStatus(config), {id, label:id === 'opencode' ? 'OpenCode' : 'Hermes', ready:true});
     const chunks = [];
     const text = 'private request "quotes" $(touch NEVER) `literal`\nsecond line';
-    const result = await runAgent({config, text, onText:chunk => chunks.push(chunk)});
+    const delays = [];
+    const originalSetTimeout = globalThis.setTimeout;
+    let result;
+    try {
+      globalThis.setTimeout = (callback, delay, ...args) => {
+        delays.push(delay);
+        return originalSetTimeout(callback, delay, ...args);
+      };
+      result = await runAgent({config, text, onText:chunk => chunks.push(chunk)});
+    } finally {
+      globalThis.setTimeout = originalSetTimeout;
+    }
+    assert.deepEqual(delays.filter(delay => delay >= 240_000), [900_000], `${id} must use the 15-minute turn deadline`);
     assert.equal(result.text, id === 'opencode' ? 'Hello world' : 'haha world');
     assert.equal(chunks.join(''), result.text);
     assert.equal(result.session, `${id}-session`);
@@ -129,6 +143,7 @@ if (id === 'hermes') {
   console.log('PASS: Omarchy defaults, private stdin, streaming, sessions, opt-in access, errors and cancellation for OpenCode/Hermes.');
 } finally {
   process.env.HOME = oldHome;
+  if(oldAgentFile===undefined)delete process.env.JARVIS_OMARCHY_AGENT_FILE;else process.env.JARVIS_OMARCHY_AGENT_FILE=oldAgentFile;
   process.env.PATH = oldPath;
   delete process.env.JARVIS_AGENT_TEST_HOME;
   fs.rmSync(home, {recursive:true, force:true});

@@ -134,6 +134,7 @@
     pttLabel: $('#pttLabel'),
     pttTimer: $('#pttTimer'),
     stopBtn: $('#stopBtn'),
+    muteBtn: $('#muteBtn'),
     resetBtn: $('#resetBtn'),
     typeToggle: $('#typeToggle'),
     composer: $('#composer'),
@@ -880,6 +881,8 @@
   var lastMicUi = 0;
   var audible = false;            // true while TTS audio is playing
   var audioPrimed = false;
+  var outputMuted = false;
+  var outputGain = null;
 
   function ensureAudio() {
     if (!AC) {
@@ -894,6 +897,7 @@
     if (!audioEl) {
       audioEl = new Audio();
       audioEl.preload = 'auto';
+      audioEl.muted = outputMuted;
       audioEl.setAttribute('playsinline', '');
       audioEl.setAttribute('webkit-playsinline', '');
       audioEl.addEventListener('ended', onAudioEnded);
@@ -909,7 +913,10 @@
         analyser.fftSize = 1024;
         analyser.smoothingTimeConstant = 0.78;
         Source.connect(analyser);
-        analyser.connect(AC.destination);
+        outputGain = AC.createGain();
+        outputGain.gain.value = outputMuted ? 0 : 1;
+        analyser.connect(outputGain);
+        outputGain.connect(AC.destination);
         mediaSource = Source;
         ttsAnalyser = analyser;
         ttsData = new Uint8Array(analyser.fftSize);
@@ -1013,10 +1020,10 @@
     if (state === S.LISTENING && micAnalyser) {
       raw = rmsOf(micAnalyser, micData);
       target = clamp(raw * 5.5, 0, 1);
-    } else if (audible && ttsAnalyser) {
+    } else if (audible && !outputMuted && ttsAnalyser) {
       raw = rmsOf(ttsAnalyser, ttsData);
       target = clamp(raw * 4.5, 0, 1);
-    } else if (audible) {
+    } else if (audible && !outputMuted) {
       // Fake envelope when AnalyserNode could not be attached to the media element.
       target = 0.18 + 0.16 * Math.abs(Math.sin(now * 0.009)) + 0.09 * Math.abs(Math.sin(now * 0.021));
     }
@@ -1034,7 +1041,7 @@
         if (state === S.LISTENING && micAnalyser) {
           var db = Math.round(20 * Math.log10(Math.max(0.0004, raw)));
           el.readoutMic.textContent = (db > -10 ? '-10' : String(Math.max(-72, db))) + ' dB';
-        } else if (audible) {
+        } else if (audible && !outputMuted) {
           el.readoutMic.textContent = 'OUT';
         } else {
           el.readoutMic.textContent = '-- dB';
@@ -1121,7 +1128,12 @@
     }
     if (starting || recording || state === S.BOOT) return;
 
+    var autoSend = document.body.dataset.workspace === 'voice';
+    var interruptedChat = !!chatAbort;
     cancelRun({ keepState: true });
+    if (interruptedChat) {
+      voiceReplyRelease = true;
+    }
     starting = true;
     stopRequested = false;
     pendingLatch = false;
@@ -1171,7 +1183,8 @@
         stopWav: null,
         mime: '',
         stopRequested: false,
-        gen: generation
+        gen: generation,
+        autoSend: autoSend
       };
 
       var mime = pickMime();
@@ -1193,7 +1206,7 @@
               if (!blob.size && !r.stopRequested && r.gen === generation) armError('EMPTY RECORDING');
               return;
             }
-            transcribeAudio(blob, recorder.mimeType || r.mime || 'audio/webm');
+            transcribeAudio(blob, recorder.mimeType || r.mime || 'audio/webm', r.autoSend);
           };
           recorder.onerror = function () {
             detachMic();
@@ -1300,7 +1313,7 @@
       }
       stopTracks(r.stream);
       starting = false;
-      if (blob && blob.size) transcribeAudio(blob, 'audio/wav');
+      if (blob && blob.size) transcribeAudio(blob, 'audio/wav', r.autoSend);
       else { setState(S.IDLE); armError('EMPTY RECORDING'); }
     }
   }
@@ -1433,7 +1446,29 @@
   /* Speech to text                                                      */
   /* ------------------------------------------------------------------ */
 
-  async function transcribeAudio(blob, mime) {
+  var voiceReplyRelease = null;
+
+  async function waitForVoiceReplyRelease() {
+    for (var attempt = 0; attempt < 60; attempt++) {
+      var response = await apiFetch('/api/history');
+      if (!response.ok) throw new Error('Could not check the previous reply. Please retry.');
+      var history = await response.json();
+      if (!history.busy) return;
+      await new Promise(function (resolve) { setTimeout(resolve, 250); });
+    }
+    throw new Error('Previous reply is still stopping. Please retry.');
+  }
+
+  function draftDictation(transcript) {
+    if (el.textInput) {
+      var draft = el.textInput.value;
+      el.textInput.value = draft + (draft && !/\s$/.test(draft) ? ' ' : '') + transcript;
+    }
+    setState(S.IDLE);
+    if (document.body.dataset.workspace === 'conversation') openComposer(true);
+  }
+
+  async function transcribeAudio(blob, mime, autoSend) {
     var runId = generation;
     setState(S.TRANSCRIBING);
 
@@ -1457,6 +1492,26 @@
         setState(S.IDLE);
         addSystem('NO SPEECH DETECTED');
         return;
+      }
+      if (!autoSend || document.body.dataset.workspace !== 'voice') {
+        draftDictation(transcript);
+        return;
+      }
+      if (voiceReplyRelease) {
+        // Keep the transcript available if cancellation takes too long.
+        var previousDraft = el.textInput ? el.textInput.value : '';
+        var pendingDraft = previousDraft ? previousDraft : transcript;
+        if (el.textInput) el.textInput.value = pendingDraft;
+        var release = voiceReplyRelease;
+        await waitForVoiceReplyRelease();
+        if (runId !== generation) return;
+        if (voiceReplyRelease === release) voiceReplyRelease = null;
+        remoteBusy = false;
+        if (el.textInput && el.textInput.value === pendingDraft) el.textInput.value = previousDraft;
+        if (document.body.dataset.workspace !== 'voice') {
+          draftDictation(transcript);
+          return;
+        }
       }
       if (el.transcriptHint) el.transcriptHint.textContent = 'HEARD';
       startChat(transcript);
@@ -1809,6 +1864,7 @@
       return;
     }
 
+    var playbackGeneration = generation;
     var url = speechQueue.shift();
     currentAudioUrl = url;
     isPlaying = true;
@@ -1818,10 +1874,13 @@
       if (AC && AC.state === 'suspended') {
         try { await AC.resume(); } catch (e) { /* ignore */ }
       }
+      if (playbackGeneration !== generation) return;
       audioEl.src = url;
       await audioEl.play();
+      if (playbackGeneration !== generation) return;
       setState(S.SPEAKING);
     } catch (err) {
+      if (playbackGeneration !== generation) return;
       isPlaying = false;
       audible = false;
       cleanupAudioUrl();
@@ -2054,6 +2113,20 @@
   }
   document.addEventListener('pointerdown', unlockAudioOnce, { once: true, capture: true, passive: true });
   document.addEventListener('keydown', unlockAudioOnce, { once: true, capture: true });
+
+  if (el.muteBtn) {
+    el.muteBtn.addEventListener('click', function () {
+      outputMuted = !outputMuted;
+      if (audioEl) audioEl.muted = outputMuted;
+      if (outputGain) outputGain.gain.value = outputMuted ? 0 : 1;
+      el.muteBtn.setAttribute('aria-pressed', String(outputMuted));
+      var label = outputMuted ? 'Unmute voice output' : 'Mute voice output';
+      el.muteBtn.setAttribute('aria-label', label);
+      el.muteBtn.title = label;
+      el.muteBtn.classList.toggle('is-active', outputMuted);
+      flashStatus(outputMuted ? 'VOICE MUTED' : 'VOICE UNMUTED', 900);
+    });
+  }
 
   if (el.stopBtn) {
     el.stopBtn.addEventListener('click', function () {

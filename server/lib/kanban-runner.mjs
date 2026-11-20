@@ -4,7 +4,16 @@ export function createKanbanRunner({board,busy,execute,onError=()=>{},onClaim=()
  let active=null,closed=false,claiming=false;
  async function tick(){
   if(closed||active||claiming||busy())return;
-  let task;claiming=true;onClaim(true);try{task=board.startNext();if(task?.then)task=await task;}catch(error){onClaim(false);onError(error);return;}finally{claiming=false;}
+  let task,locked=false;
+  claiming=true;
+  try{
+   // Reading an empty queue must not make the chat endpoint look busy.
+   let view=board.view();if(view?.then)view=await view;
+   if(closed||busy()||!view.tasks.some(task=>task.execution==='queued'))return;
+   onClaim(true);locked=true;
+   task=board.startNext();if(task?.then)task=await task;
+  }catch(error){if(locked)onClaim(false);onError(error);return;}
+  finally{claiming=false;}
   if(!task){onClaim(false);return;}
   const controller=new AbortController();active={task,controller};
   try{

@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # omarchy:summary=Control the local JARVIS voice bridge
-# omarchy:args=[start|stop|restart|status|url|qr|open|toggle|phone|desktop|setup|setup-status|models|uninstall|logs|reset|cert|token|doctor|tailscale-enable|tailscale-status]
+# omarchy:args=[start|stop|restart|status|url|qr|open|toggle|phone|desktop|notifications|setup|setup-status|models|uninstall|logs|reset|cert|token|doctor|tailscale-enable|tailscale-status]
 # omarchy:examples=jarvis start | jarvis qr | jarvis open
 
 set -euo pipefail
@@ -279,6 +279,7 @@ open)
 tailscale-enable) exec node "$ROOT/server/lib/tailscale.mjs" enable ;;
 tailscale-status) exec node "$ROOT/server/lib/tailscale.mjs" status ;;
 board) shift; exec node "$ROOT/server/kanban-cli.mjs" "$@" ;;
+notifications) shift; exec node "$ROOT/server/notifications-cli.mjs" "$@" ;;
 desktop) exec node "$ROOT/server/desktop.mjs" ;;
 toggle) omarchy-shell shell toggle h3man.jarvis ;;
 phone) omarchy-shell h3man.jarvis phone ;;
@@ -288,7 +289,7 @@ cert) cmd_cert ;;
 token) cmd_token ;;
 doctor) cmd_doctor ;;
 *)
-  echo "Usage: jarvis <start|stop|restart|status|url|qr|open|toggle|phone|desktop|setup|setup-status|models|uninstall|logs|reset|cert|token|doctor|tailscale-enable|tailscale-status>"
+  echo "Usage: jarvis <start|stop|restart|status|url|qr|open|toggle|phone|desktop|notifications|setup|setup-status|models|uninstall|logs|reset|cert|token|doctor|tailscale-enable|tailscale-status>"
   exit 1
   ;;
 esac

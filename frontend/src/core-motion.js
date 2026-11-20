@@ -1,7 +1,7 @@
 // One smoothed motion envelope for the GLB and procedural fallback.
 const busyModes=new Set(['thinking','working','responding']);
 export function createCoreMotion(){
- let mode='boot',workAge=0,speed=.05,energy=0,pulse=0,elapsed=0,previousRaw=0,heat=0,idleAge=0,pose=0;
+ let mode='boot',workAge=0,speed=.05,energy=0,pulse=0,elapsed=0,previousRaw=0,heat=0,idleAge=0,pose=0,work=0;
  return {
   setMode(next){if(next===mode)return;if(!busyModes.has(next)||!busyModes.has(mode))workAge=0;if(next==='listening')pulse=1;mode=next;},
   step(dt,level,reduced=false){
@@ -17,12 +17,16 @@ export function createCoreMotion(){
    if(pose<.002)pose=0;
    const desired=busy?Math.min(2.8,.65+workAge*.2)+(mode==='working'?.35:0):({boot:.18,idle:.025*heat,listening:.12,transcribing:.65,speaking:.45,error:.04}[mode]??.025);
    speed+=(desired-speed)*(1-Math.exp(-dt*(busy?1.3:mode==='idle'?.45:2.8)));
-   energy+=(raw-energy)*(1-Math.exp(-dt*(raw>energy?28:7)));
+   // Keep a short visual tail after playback ends, including between speech chunks.
+   const release=mode==='idle'?2:7;
+   energy+=(raw-energy)*(1-Math.exp(-dt*(raw>energy?28:release)));
+   const workTarget=busy?1:mode==='transcribing'?.35:0;
+   work+=(workTarget-work)*(1-Math.exp(-dt*(workTarget>work?4:1.8)));
    pulse=Math.max(0,pulse-dt*2.6);
    if(mode==='listening'&&raw>.045&&raw-previousRaw>.025)pulse=Math.max(pulse,Math.min(1,raw*2.8));
    previousRaw=raw;
    if(!reduced)elapsed+=dt;
-   return {mode,heat,pose,home:mode==='idle'&&idleAge>2, speed:reduced?0:speed,energy:reduced?0:energy,pulse:reduced?0:pulse,elapsed:reduced?0:elapsed,work:reduced?0:busy?1:mode==='transcribing'?.35:0};
+   return {mode,heat,pose,home:mode==='idle'&&idleAge>2, speed:reduced?0:speed,energy:reduced?0:energy,pulse:reduced?0:pulse,elapsed:reduced?0:elapsed,work:reduced?0:work};
   }
  };
 }

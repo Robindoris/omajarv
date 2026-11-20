@@ -1,0 +1,8 @@
+[Unit]
+Description=Fetch and prepare the Jarvis 2.0 development handoff
+
+[Service]
+Type=oneshot
+ExecStart="%h/.local/bin/jarvis-daily" evening
+TimeoutStartSec=90s
+UMask=0077

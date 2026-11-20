@@ -16,6 +16,47 @@ function TaskEditor({task,pending,onSave,onClose,error,retry,onRetry}){
  const field=(key,value)=>setDraft(previous=>({...previous,[key]:value}));
  return <Modal title={task?.id?'Edit task':'New task'} onClose={onClose} error={error} retry={retry} onRetry={onRetry} pending={pending}><form onSubmit={async e=>{e.preventDefault();if(await onSave({action:task?.id?'edit':'create',revision:task?._revision,...(task?.id?{id:task.id}:{}),title:draft.title,notes:draft.notes,priority:draft.priority,dueDate:draft.dueDate,recurrence:draft.recurrence}))onClose();}}><fieldset disabled={pending||!!retry}><label>Title<input autoFocus required maxLength={200} value={draft.title} onChange={e=>field('title',e.target.value)}/></label><label>Notes<textarea rows={5} maxLength={8000} value={draft.notes} onChange={e=>field('notes',e.target.value)}/></label><div className="kb-editor-row"><label>Priority<select value={draft.priority} onChange={e=>field('priority',e.target.value)}>{PRIORITIES.map(p=><option key={p}>{p}</option>)}</select></label><label>Due date (host calendar)<input type="date" min="2000-01-01" max="9999-12-31" value={draft.dueDate} onChange={e=>field('dueDate',e.target.value)}/></label></div><div className="kb-editor-row"><label>Repeat<select value={draft.recurrence.frequency} onChange={e=>field('recurrence',{...draft.recurrence,frequency:e.target.value})}>{['none','daily','weekly','monthly'].map(f=><option key={f}>{f}</option>)}</select></label>{draft.recurrence.frequency!=='none'&&<label>Every (interval)<input type="number" min={1} max={365} required value={draft.recurrence.interval} onChange={e=>field('recurrence',{...draft.recurrence,interval:Number(e.target.value)})}/></label>}</div><p className="kb-help">Completing a recurring task creates one new occurrence in Next up. Dates follow the computer running JARVIS.</p><footer><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit">{pending?'Saving…':'Save task'}</Button></footer></fieldset></form></Modal>;
 }
+function MorningTaskPicker({active,board,refreshBoard}){
+ const [chosen,setChosen]=useState(null),[draft,setDraft]=useState(null),[loading,setLoading]=useState(true),[saving,setSaving]=useState(false),[error,setError]=useState(''),[loadError,setLoadError]=useState('');
+ const locked=useRef(false),generation=useRef(0);
+ const choices=board.tasks.filter(task=>task.status!=='done'&&!busyTask(task)&&task.notes?.trim());
+ const candidate=draft??chosen?.id??'';
+ useEffect(()=>{
+  if(!active)return;
+  const controller=new AbortController();
+  let refreshing=false;
+  async function refresh(){
+   if(refreshing||locked.current||document.visibilityState==='hidden')return;
+   refreshing=true;const revision=generation.current;
+   try{const {task}=await window.jarvisAPI('/api/kanban/morning',{signal:controller.signal});if(revision===generation.current&&!controller.signal.aborted){setChosen(task);setLoading(false);setLoadError('');}}
+   catch(e){if(!controller.signal.aborted&&revision===generation.current)setLoadError('Could not refresh the morning task.');}
+   finally{refreshing=false;}
+  }
+  refresh();const timer=setInterval(refresh,4000);
+  return()=>{controller.abort();clearInterval(timer);};
+ },[active]);
+ async function save(id){
+  if(locked.current)return;
+  locked.current=true;generation.current++;setSaving(true);setError('');
+  try{
+   const {task}=await window.jarvisAPI('/api/kanban/morning',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,revision:board.revision})});
+   setChosen(task);setDraft(null);setLoading(false);setLoadError('');
+  }catch(e){setError(e.message);if(e.status===409)await refreshBoard();}
+  finally{locked.current=false;setSaving(false);}
+ }
+ return <section className="kb-morning" aria-labelledby="kb-morning-heading">
+  <h3 id="kb-morning-heading">Morning task</h3>
+  <p className="kb-help">Choose what the next morning session should review. This won’t run the card or approve edits.</p>
+  <p className="kb-morning-current" role="status">{loading?(loadError?'Selection unavailable.':'Loading selection…'):chosen?<>Selected: <strong>{chosen.title}</strong></>:'No task selected.'}</p>
+  <form onSubmit={event=>{event.preventDefault();if(choices.some(task=>task.id===candidate))save(candidate);}}>
+   <label><span className="sr-only">Choose a morning task</span><select value={choices.some(task=>task.id===candidate)?candidate:''} disabled={saving||loading||!choices.length} onChange={event=>setDraft(event.target.value)}><option value="">Choose a task…</option>{choices.map(task=><option key={task.id} value={task.id}>{task.title}</option>)}</select></label>
+   <Button type="submit" variant="outline" disabled={saving||loading||candidate===chosen?.id||!choices.some(task=>task.id===candidate)}>Use for morning</Button>
+   {chosen&&<Button type="button" variant="ghost" disabled={saving} onClick={()=>save(null)}>Clear</Button>}
+  </form>
+  {!choices.length&&!loading&&<p className="kb-help">Add notes to an unfinished card to make it available here.</p>}
+  {(error||loadError)&&<p className="kb-task-error" role="alert">{error||loadError}</p>}
+ </section>;
+}
 export function KanbanBoard({active}){
  const [board,setBoard]=useState({revision:0,tasks:[]}),[title,setTitle]=useState(''),[pending,setPending]=useState(false),[error,setError]=useState(''),[connection,setConnection]=useState(''),[message,setMessage]=useState(''),[retry,setRetry]=useState(null);
  const [filtersOpen,setFiltersOpen]=useState(()=>matchMedia('(min-width:768px)').matches);
@@ -42,6 +83,9 @@ export function KanbanBoard({active}){
   const match=(task.title+'\n'+(task.notes||'')).toLocaleLowerCase().includes(query.trim().toLocaleLowerCase());
   const when=task.status!=='done'&&task.dueDate?(task.dueDate<today?'overdue':task.dueDate===today?'today':'upcoming'):task.dueDate?'completed':'none';
   return match&&(priority==='all'||(task.priority||'normal')===priority)&&(execution==='all'||(task.execution||'idle')===execution)&&(due==='all'||due===when);
+ }).sort((a,b)=>{
+  if(a.status!=='done' || b.status!=='done')return Number(a.status==='done')-Number(b.status==='done');
+  return (b.completedAt||b.updatedAt||b.createdAt||0)-(a.completedAt||a.updatedAt||a.createdAt||0);
  }),[board,query,priority,due,execution,today]);
  useLayoutEffect(()=>{if(focusId){document.getElementById('task-'+focusId)?.focus();setFocusId(null);}},[board,focusId]);
  function focusTask(id){setFocusId(id);}
@@ -73,6 +117,7 @@ export function KanbanBoard({active}){
  return <div className="kanban-workspace kb-workspace">
   <header className="kb-heading"><div><span className="eyebrow">JARVIS / WORKSPACE</span><h2>Task board</h2><p>Plan it. Run it. Know where it stands.</p></div><div className="kb-toolbar"><Button variant="outline" onClick={()=>downloadBackup()}><Download size={16}/>Back up</Button><Button variant="outline" onClick={()=>upload.current.click()}><Upload size={16}/>Restore file</Button><Button variant="outline" onClick={showBackups}>Saved backups</Button><input ref={upload} type="file" accept="application/json,.json" hidden aria-label="Choose board backup" onChange={readBackup}/></div></header>
   <form className="kb-add" onSubmit={async e=>{e.preventDefault();if(await mutate({action:'create',title}))setTitle('');}}><input aria-label="New task title" disabled={pending||!!retry} value={title} maxLength={200} onChange={e=>setTitle(e.target.value)} placeholder="What needs to get done?"/><Button disabled={pending||!!retry||!title.trim()}><Plus size={16}/>Add task</Button><Button type="button" variant="outline" disabled={pending} onClick={()=>setEditor({...blank(),title,_revision:state.current.revision})}>Add details</Button></form>
+  <MorningTaskPicker active={active} board={board} refreshBoard={refresh}/>
   <div className="kb-filters"><label className="kb-search"><span><Search size={14}/>Search title or notes</span><input type="search" value={query} onChange={e=>setQuery(e.target.value)} placeholder="Find a task…"/></label><Button className="kb-filter-toggle" variant="outline" aria-expanded={filtersOpen} aria-controls="kb-filter-fields" onClick={()=>setFiltersOpen(!filtersOpen)}>Filters{[priority,due,execution].filter(v=>v!=='all').length?' ('+[priority,due,execution].filter(v=>v!=='all').length+')':''}</Button><div id="kb-filter-fields" className="kb-filter-fields" hidden={!filtersOpen}><label>Priority<select value={priority} onChange={e=>setPriority(e.target.value)}><option value="all">All priorities</option>{PRIORITIES.map(p=><option key={p}>{p}</option>)}</select></label><label>Due date<select value={due} onChange={e=>setDue(e.target.value)}><option value="all">Any date</option><option value="overdue">Overdue</option><option value="today">Today</option><option value="upcoming">Upcoming</option><option value="none">No due date</option></select></label><label>Execution status<select value={execution} onChange={e=>setExecution(e.target.value)}><option value="all">All statuses</option>{Object.entries(STATES).map(([id,label])=><option key={id} value={id}>{label}</option>)}</select></label><Button variant="ghost" onClick={()=>{setQuery('');setPriority('all');setDue('all');setExecution('all');}}><RotateCcw size={14}/>Reset filters</Button></div></div>
   <div className="kb-meta"><span aria-live="polite">{shown.length} of {board.tasks.length} tasks</span><span>{board.timeZone?`Host date: ${today} · ${board.timeZone}`:'Loading host calendar…'}</span></div>
   {(error||connection)&&<div className="kanban-error kb-error" role="alert">{error||connection}{retry&&<Button variant="outline" disabled={pending} onClick={()=>mutate(retry,true)}>Retry request safely</Button>}</div>}

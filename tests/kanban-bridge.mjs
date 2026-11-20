@@ -45,6 +45,20 @@ let prompt='';process.stdin.on('data',b=>prompt+=b);process.stdin.on('end',()=>{
  assert.equal((await api('/api/calendar',{...calendarInput,requestId:crypto.randomUUID()})).status,409);
  assert.equal((await api('/api/calendar',{...calendarInput,revision:1,timeZone:'not/a-zone',requestId:crypto.randomUUID()})).status,400);
  assert.equal(JSON.parse((await api('/api/notifications')).text).items.length,1);
+ const reminder=JSON.parse((await api('/api/notifications')).text).items[0];
+ const nativeTool=input=>{const r=spawnSync(process.execPath,[path.join(root,'server/notifications-cli.mjs'),'--state-dir',state],{env,input:JSON.stringify(input),encoding:'utf8',timeout:15000});assert.equal(r.status,0,r.stderr+r.stdout);return JSON.parse(r.stdout);};
+ assert.equal(nativeTool({action:'notifications'}).items[0].id,reminder.id);
+ assert.equal(nativeTool({action:'notificationRead',id:reminder.id}).unread,0);
+ assert.equal(nativeTool({action:'notificationDetails',id:reminder.id}).event.timeZone,'Europe/Bratislava');
+
+ assert.equal((await api('/api/notifications',{action:'notification:read',id:reminder.id})).status,200);
+ assert.equal(JSON.parse((await api('/api/notifications')).text).unread,0);
+ assert.equal((await api('/api/notifications',{action:'notification:snooze',id:reminder.id,minutes:7})).status,400);
+ assert.equal((await api('/api/notifications',{action:'notification:snooze',id:reminder.id,minutes:5})).status,200);
+ assert.equal(JSON.parse((await api('/api/notifications')).text).items.length,0);
+ assert.equal((await api('/api/notifications',{action:'notification:dismiss',id:reminder.id})).status,200);
+ assert.equal((await api('/api/notifications',{action:'notification:read',id:'missing'})).status,404);
+ assert.equal((await api('/api/notifications',{action:'create'})).status,400);
  const first=tool('add','Tool fixture task');const id=first.tasks[0].id;
  assert.equal(tool('move',id,'doing').tasks[0].status,'doing');
  assert.equal(tool('move',id,'done').tasks[0].status,'done');

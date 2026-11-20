@@ -21,7 +21,7 @@ Publication-preparation changes:
 - Added first-run model discovery without scanning the whole home directory.
 - Release builder uses a source allowlist and rejects symlinks and credential patterns.
 - Raw tool/provider diagnostics are replaced by application-authored errors.
-- Cloudflare verifies the local bridge certificate rather than accepting any TLS origin.
+- Cloudflare forwards through the private Unix socket rather than a localhost TCP/TLS origin.
 - Audio decoding reads a restricted pipe and cannot follow uploaded network/file playlists.
 - Native labels render as plain text; phone pages restrict external resources and framing.
 - Routine phone API calls use an authentication header rather than bearer query strings.
@@ -94,3 +94,5 @@ provided as private local paths for agent tools; the bridge never executes or
 previews them. Attachment instructions mark contents as untrusted, but this is not
 malware scanning or a guarantee against prompt injection: the selected agent's
 permissions remain the boundary for any tool actions it chooses to take.
+
+Cloudflare Quick Tunnel ingress uses the same protected Unix socket as private Serve. Its configuration is atomically written with mode 0600; preparation failure prevents launch, with no TCP fallback.

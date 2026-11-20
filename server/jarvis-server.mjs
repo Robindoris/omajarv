@@ -32,7 +32,7 @@ import { historyFor, appendHistory, clearHistory, conversations } from "./lib/hi
 import { createAttachments, attachmentPrompt, MAX_FILE } from "./lib/attachments.mjs";
 import { createPersonality } from "./lib/personality.mjs";
 import { createSudoSession } from "./lib/sudo.mjs";
-import { publicAgentError } from "./lib/privacy.mjs";
+import { publicAgentError, writePrivateFile } from "./lib/privacy.mjs";
 
 import { createKanbanRunner } from "./lib/kanban-runner.mjs";
 import {openPlanner} from './lib/planner.mjs';
@@ -54,6 +54,22 @@ const config = loadConfig();
 const ipCamera=createIPCamera(config);
 const personality = createPersonality(config);
 const kanban = await openKanban(paths.stateDir);
+const morningFile = path.join(paths.stateDir,'morning-task.json');
+function savedMorningTask(){
+  try{return JSON.parse(fs.readFileSync(morningFile,'utf8'));}
+  catch(error){if(error.code==='ENOENT')return null;throw error;}
+}
+function morningCandidate(board,id){
+  const task=board.tasks.find(task=>task.id===id);
+  if(!task||task.status==='done'||['queued','running'].includes(task.execution)||!task.notes?.trim())return null;
+  return {id:task.id,title:task.title,notes:task.notes};
+}
+function syncMorningTask(board){
+  const saved=savedMorningTask();
+  if(!saved)return;
+  const current=morningCandidate(board,saved.id);
+  if(JSON.stringify(saved)!==JSON.stringify(current))writePrivateFile(morningFile,JSON.stringify(current));
+}
 const planner = await openPlanner(paths.stateDir);
 let plannerTickBusy=false;
 async function plannerTick(){if(plannerTickBusy)return;plannerTickBusy=true;try{await planner.tick((await kanban.view()).tasks);}catch{}finally{plannerTickBusy=false;}}
@@ -287,6 +303,26 @@ async function handleApi(req, res, pathname, params) {
   }
 
   if (pathname === "/api/kanban" && req.method === "GET") return sendJson(res,200,await kanban.view());
+  if (pathname === "/api/kanban/morning" && ['GET','POST'].includes(req.method)) {
+    try {
+      if(req.method==='GET'){
+        const board=await kanban.view(), saved=savedMorningTask();
+        return sendJson(res,200,{task:saved?morningCandidate(board,saved.id):null});
+      }
+      if(!String(req.headers['content-type']||'').startsWith('application/json')||req.headers['sec-fetch-site']==='cross-site')return sendJson(res,403,{error:'Use a same-site JSON request.'});
+      const input=JSON.parse((await readBody(req,1024)).toString());
+      if(!input||!Number.isSafeInteger(input.revision)||!(input.id===null||typeof input.id==='string'&&/^[\w:-]{1,100}$/.test(input.id)))return sendJson(res,400,{error:'Choose a valid task or clear the selection.'});
+      const board=await kanban.view();
+      if(input.revision!==board.revision)return sendJson(res,409,{error:'The board changed. Review the latest tasks and choose again.'});
+      const task=input.id===null?null:morningCandidate(board,input.id);
+      if(input.id!==null&&!task){
+        if(!board.tasks.some(item=>item.id===input.id))return sendJson(res,404,{error:'Task no longer exists.'});
+        return sendJson(res,409,{error:'Choose an unfinished task with a description that is not queued or running.'});
+      }
+      writePrivateFile(morningFile,JSON.stringify(task));
+      return sendJson(res,200,{task});
+    }catch(error){return sendJson(res,error instanceof SyntaxError?400:503,{error:'Unable to read or save the morning task.'});}
+  }
   if (pathname === "/api/kanban/backup" && req.method === "GET") {
     try {return sendJson(res,200,params.has('revision')?await kanban.savedBackup(Number(params.get('revision'))):await kanban.backup());}
     catch(error){return sendJson(res,error.status||400,{error:error.status?error.message:'Unable to read backup.'});}
@@ -305,7 +341,9 @@ async function handleApi(req, res, pathname, params) {
     try {
       const input=JSON.parse((await readBody(req,8*1024*1024)).toString());
       if(['queue','advance'].includes(input.action)&&personality.answering())return sendJson(res,409,{error:'Finish Personality setup before running tasks.'});
-      return sendJson(res,200,await kanban.update(input));
+      const board=await kanban.update(input);
+      try{syncMorningTask(board);}catch{log('Could not refresh the saved morning task.');}
+      return sendJson(res,200,board);
     }catch(error){return sendJson(res,error.status||400,{error:error.status?error.message:'Unable to save the task board. Check disk space and try again.'});}
   }
   if (pathname === "/api/health") return sendJson(res, 200, { ok: true });

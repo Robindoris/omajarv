@@ -7,7 +7,7 @@ motion.setMode('listening');assert.ok(motion.step(.05,.7).pulse>.5,'Speech onset
 advance(1,0);assert.ok(motion.step(.05,.8).pulse>.5,'Another phrase creates another pulse');
 motion.setMode('thinking');const early=advance(1);const late=advance(8);assert.ok(late.speed>early.speed*1.7,'Sustained work accelerates');
 motion.setMode('working');assert.ok(advance(1).speed>=late.speed,'Tool activity preserves acceleration');
-motion.setMode('responding');assert.ok(advance(.5).work===1);
+motion.setMode('responding');assert.ok(advance(.5).work>.99);
 motion.setMode('idle');assert.ok(advance(12).speed<.04,'Completion settles back to standby');
 motion.setMode('working');const reduced=advance(3,.9,true);assert.equal(reduced.speed,0);assert.equal(reduced.energy,0);assert.equal(reduced.pulse,0);assert.equal(reduced.work,0);
 console.log('PASS: calm standby, voice pulses, work acceleration, smooth settling and reduced motion.');
@@ -22,3 +22,17 @@ assert.ok(warm.heat<heatAtFinish&&warm.heat>.3,'Cooling is gradual');
 for(let i=0;i<1600;i++)warm=thermal.step(.05,0);
 assert.equal(warm.heat,0,'Extended standby extinguishes glow');assert.equal(warm.pose,0,'Idle animation returns to the original pose');assert.ok(warm.speed<.001);
 console.log('PASS: progressive heating, gradual cooling, cold standby and default animation pose.');
+
+const speech=createCoreMotion();speech.setMode('speaking');
+let speaking;for(let i=0;i<100;i++)speaking=speech.step(.02,.8);
+speech.setMode('idle');
+const release=speech.step(.02,0);
+assert.ok(release.energy>speaking.energy*.95,'Playback ends without an abrupt energy drop');
+assert.ok(release.speed>speaking.speed*.95,'Rotation coasts after playback');
+let settled=release;for(let i=0;i<200;i++)settled=speech.step(.02,0);
+assert.ok(settled.energy<.001,'Speech energy settles to idle');
+speech.setMode('speaking');assert.ok(speech.step(.02,.8).energy>.3,'New speech responds promptly during settling');
+const activity=createCoreMotion();activity.setMode('working');
+let active;for(let i=0;i<100;i++)active=activity.step(.02,0);
+activity.setMode('idle');assert.ok(activity.step(.02,0).work>active.work*.95,'Activity precession eases out at completion');
+console.log('PASS: speech release, prompt re-entry and activity settling.');

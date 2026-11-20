@@ -13,6 +13,28 @@ BarWidget {
   moduleName: "h3man.jarvis"
 
   property var panelItem: null
+  readonly property bool nativeCalendarToasts: setting("nativeCalendarToasts", true)
+  readonly property string calendarStateDir: setting("calendarStateDir", "")
+  property var calendarItems: []
+  property int calendarUnread: 0
+  property bool calendarLoaded: false
+  property bool calendarAvailable: false
+  property int calendarGeneration: 0
+  property int pollGeneration: 0
+  function applyNotifications(data) {
+    calendarGeneration++
+    calendarItems = data.items || []
+    calendarUnread = data.unread || 0
+    calendarLoaded = true
+    calendarAvailable = true
+    if (panelItem && !panelItem.notificationBusy) panelItem.notificationError = ""
+  }
+  function refreshNotifications() {
+    if (!notificationProc.running && !(panelItem && panelItem.notificationBusy)) {
+      pollGeneration = calendarGeneration
+      notificationProc.running = true
+    }
+  }
   property bool online: false
   property string agentLabel: ""
   property bool animate: setting("animate", true)
@@ -30,7 +52,7 @@ BarWidget {
   function open() { if (panelItem) { panelItem.tab = 0; panelItem.open() } }
   function phone() { if (panelItem) { panelItem.tab = 1; panelItem.open() } }
   function close() { if (panelItem) panelItem.close() }
-  function togglePanel() { if (panelItem) panelItem.toggle() }
+  function togglePanel() { if (panelItem) { if (!panelItem.opened && calendarUnread > 0) panelItem.showReminders = true; panelItem.toggle() } }
   function closeForPopoutSwitch() { if (panelItem) panelItem.closeForPopoutSwitch() }
   function refreshStatus() { if (!statusProc.running) statusProc.running = true }
 
@@ -39,7 +61,7 @@ BarWidget {
 
   onBarChanged: injectPanel()
   onSettingsChanged: injectPanel()
-  Component.onCompleted: refreshStatus()
+  Component.onCompleted: { refreshStatus(); refreshNotifications() }
 
   function injectPanel() {
     var target = panelLoader.item
@@ -51,6 +73,20 @@ BarWidget {
     if ("hostWidget" in target) target.hostWidget = root
   }
 
+  Timer { interval: 10000; running: true; repeat: true; onTriggered: root.refreshNotifications() }
+  Process {
+    id: notificationProc
+    command: [root.jarvisBin, "notifications"].concat(root.calendarStateDir ? ["--state-dir", root.calendarStateDir] : []).concat(root.nativeCalendarToasts ? ["--deliver"] : [])
+    stdout: StdioCollector { id: notificationOutput; waitForEnd: true }
+    onExited: function(code) {
+      if (root.pollGeneration !== root.calendarGeneration || (root.panelItem && root.panelItem.notificationBusy)) return
+      try {
+        var data = JSON.parse(notificationOutput.text)
+        if (code !== 0 || data.event !== "notifications") throw new Error("unavailable")
+        root.applyNotifications(data)
+      } catch(e) { root.calendarAvailable = false; root.calendarLoaded = true }
+    }
+  }
   Process {
     id: statusProc
     command: [root.jarvisBin, "status", "--json"]
@@ -78,7 +114,7 @@ BarWidget {
 
   Timer {
     interval: Math.max(5, root.pollSeconds) * 1000
-    running: root.animate
+    running: true
     repeat: true
     onTriggered: root.refreshStatus()
   }
@@ -108,16 +144,20 @@ BarWidget {
     anchors.fill: parent
     bar: root.bar
     text: ""
+    labelText: root.calendarUnread > 0 ? (root.calendarUnread > 99 ? "99+" : String(root.calendarUnread)) : ""
     tooltipText: {
       var state = root.online ? "online" : "offline"
-      return "JARVIS " + state + (root.agentLabel ? " · " + root.agentLabel : "") + " · click for phone link"
+      return "JARVIS " + state + (root.agentLabel ? " · " + root.agentLabel : "") + " · " + root.calendarUnread + " unread calendar reminders" + (root.calendarAvailable ? "" : " · calendar unavailable")
     }
     onPressed: function(mouseButton) {
       if (mouseButton === Qt.LeftButton) root.togglePanel()
-      else if (mouseButton === Qt.RightButton) root.refreshStatus()
+      else if (mouseButton === Qt.RightButton) { root.refreshStatus(); root.refreshNotifications() }
     }
 
     iconComponent: Component {
+      Item {
+        width: Style.bar.iconCanvas
+        height: width
       Canvas {
         id: reactor
         // The icon loader measures its content before assigning a size.
@@ -185,6 +225,8 @@ BarWidget {
           ctx.fill()
           ctx.globalAlpha = 1
         }
+      }
+
       }
     }
   }

@@ -2,6 +2,7 @@
 // Private, line-delimited JSON bridge for the native QML panel.
 // Credentials stay in this process; requests only go to loopback with pinned TLS.
 import fs from 'node:fs';
+import {createDesktopNotifications} from './lib/desktop-notifications.mjs';
 import path from 'node:path';
 import https from 'node:https';
 import readline from 'node:readline';
@@ -98,7 +99,7 @@ function request(endpoint, body, contentType = 'application/json', onEvent) {
     });
     requests.add(req);
     req.on('close', () => requests.delete(req));
-    req.setTimeout(onEvent ? 260000 : 120000, () => req.destroy(new Error('Bridge timed out')));
+    req.setTimeout(onEvent ? 260000 : ['notifications','calendar'].includes(endpoint) ? 10000 : 120000, () => req.destroy(new Error('Bridge timed out')));
     req.on('error', reject);
     req.end(body);
   });
@@ -158,7 +159,9 @@ async function finishRecording() {
   } catch (error) { if (run === generation) emit('error', { error: error.message }); }
   finally { if (run === generation) { operation = false; emit('state', { state: 'Ready' }); } }
 }
+const notifications = createDesktopNotifications(request, emit);
 async function dispatch(data) {
+  if (notifications.handles(data.action)) return notifications.dispatch(data);
   if (data.action === 'attachFiles') return perform(async () => { emit('state', {state:'Choosing files'}); await chooseAttachments(); });
   if (data.action === 'pasteClipboard') return perform(async () => { await pasteClipboard(data.imageOnly === true); });
   if (data.action === 'removeAttachment') return perform(async () => {
@@ -210,6 +213,16 @@ async function dispatch(data) {
     emit('state', { state: 'Listening' });
     recordTimer = setTimeout(() => finishRecording(), config.maxRecordingSec * 1000);
   }
+}
+if (process.argv[2] === '--notifications') {
+  let failed = false;
+  const oneShot = createDesktopNotifications(request, (event, data) => {
+    emit(event, data);
+    if (event === 'notificationError') failed = true;
+  });
+  await oneShot.dispatch({action:'notifications'});
+  fs.rmSync(temp, {recursive:true, force:true});
+  process.exit(failed ? 1 : 0);
 }
 readline.createInterface({ input: process.stdin }).on('line', line => {
   try { Promise.resolve(dispatch(JSON.parse(line))).catch(error => emit('error', { error: error.message })); }

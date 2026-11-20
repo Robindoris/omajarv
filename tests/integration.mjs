@@ -161,6 +161,21 @@ for(let i=0;i<100&&!logs.includes('listening on');i++)await new Promise(r=>setTi
 assert.equal(JSON.parse((await api('/api/history')).text).messages.length,2);
 helper=spawn(process.execPath,[path.join(root,'server/desktop.mjs')],{env,stdio:['pipe','pipe','pipe']});
 let output='';let errors='';helper.stdout.on('data',b=>output+=b);helper.stderr.on('data',b=>errors+=b);
+const reminderInput={action:'create',revision:0,requestId:crypto.randomUUID(),title:'Native TLS calendar fixture',notes:'Synthetic details',startAt:new Date(Date.now()+3600000).toISOString(),endAt:new Date(Date.now()+7200000).toISOString(),timeZone:'Europe/Bratislava',reminderMinutes:120,recurrence:'none'};
+assert.equal((await api('/api/calendar',reminderInput)).status,200);
+helper.stdin.write('{"action":"notifications"}\n');
+for(let i=0;i<100&&!output.includes('"event":"notifications"');i++)await new Promise(r=>setTimeout(r,20));
+const nativeInbox=JSON.parse(output.split('\n').find(line=>line.includes('"event":"notifications"')));
+assert.equal(nativeInbox.unread,1);
+const poller=spawn(process.execPath,[path.join(root,'server/desktop.mjs'),'--notifications'],{env,stdio:['ignore','pipe','pipe']});
+let pollOutput='';poller.stdout.on('data',b=>pollOutput+=b);
+assert.equal((await once(poller,'exit'))[0],0);
+assert.equal(JSON.parse(pollOutput).items[0].id,nativeInbox.items[0].id);
+
+assert.equal(nativeInbox.items[0].id,JSON.parse((await api('/api/notifications')).text).items[0].id);
+helper.stdin.write(JSON.stringify({action:'notificationRead',id:nativeInbox.items[0].id})+'\n');
+for(let i=0;i<100&&JSON.parse((await api('/api/notifications')).text).unread;i++)await new Promise(r=>setTimeout(r,20));
+assert.equal(JSON.parse((await api('/api/notifications')).text).unread,0);
 helper.stdin.write('{"action":"personality"}\n');
 for(let i=0;i<100&&!output.includes('"event":"personality"');i++)await new Promise(r=>setTimeout(r,20));
 assert.match(output,/Nova/);

@@ -5,13 +5,14 @@ import vm from 'node:vm';
 // Exercise the desktop dispatcher with a deliberately stalled metadata request.
 const source = fs.readFileSync(new URL('../server/desktop.mjs', import.meta.url), 'utf8');
 const perform = source.slice(source.indexOf('async function perform('), source.indexOf('async function finishRecording('));
-const dispatch = source.slice(source.indexOf('async function dispatch('), source.indexOf('readline.createInterface('));
+const dispatch = source.slice(source.indexOf('async function dispatch('), source.indexOf("if (process.argv[2] === '--notifications')"));
 let resolveModels;
 const pendingModels = new Promise(resolve => { resolveModels = resolve; });
 const events = [];
 const chats = [];
 let lookups = 0;
 const context = vm.createContext({
+  notifications: {handles: () => false},
   emit: (event, data) => events.push({event, ...data}),
   request: endpoint => { assert.equal(endpoint, 'models'); lookups++; return pendingModels; },
   chat: async text => { chats.push(text); },

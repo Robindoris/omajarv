@@ -36,6 +36,40 @@
 
 * { box-sizing: border-box; }
 
+/* Use the theme's stable palette, not the voice core's transient state accent. */
+@media not (forced-colors: active) {
+  :root {
+    --scroll-track: var(--bg);
+    --scroll-thumb: var(--text);
+    --scroll-hover: var(--text);
+    --scroll-active: var(--text);
+  }
+  @supports (color: color-mix(in srgb, black, white)) {
+    :root {
+      --scroll-thumb: color-mix(in srgb, var(--text) 75%, var(--core));
+      --scroll-hover: color-mix(in srgb, var(--text) 85%, var(--core));
+    }
+  }
+  :where(:root, body *) { scrollbar-color: var(--scroll-thumb) var(--scroll-track); }
+  @media (hover: hover) and (pointer: fine) {
+    :where(:root, body *) { scrollbar-width: thin; }
+  }
+  @supports not (scrollbar-color: auto) {
+    @media (hover: hover) and (pointer: fine) {
+      :where(:root, body *)::-webkit-scrollbar { width: 10px; height: 10px; }
+      :where(:root, body *)::-webkit-scrollbar-track,
+      :where(:root, body *)::-webkit-scrollbar-corner { background: var(--scroll-track); }
+      :where(:root, body *)::-webkit-scrollbar-thumb {
+        background: var(--scroll-thumb);
+        border: 1px solid var(--scroll-track);
+        border-radius: 999px;
+      }
+      :where(:root, body *)::-webkit-scrollbar-thumb:hover { background: var(--scroll-hover); }
+      :where(:root, body *)::-webkit-scrollbar-thumb:active { background: var(--scroll-active); }
+    }
+  }
+}
+
 :is(#personalityDialog, #sudoDialog) {
   width: min(92vw, 560px);
   max-height: 85dvh;
@@ -547,13 +581,7 @@ body[data-state="error"] .readout-v { color: var(--red); }
   display: flex;
   flex-direction: column;
   gap: 5px;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(var(--mid-rgb), 0.35) transparent;
 }
-
-.transcript::-webkit-scrollbar { width: 4px; }
-.transcript::-webkit-scrollbar-thumb { background: rgba(var(--mid-rgb), 0.32); border-radius: 4px; }
-.transcript::-webkit-scrollbar-track { background: transparent; }
 
 .line {
   display: grid;
@@ -1190,3 +1218,6 @@ body[data-view="voice"] .ptt { width: 104px; height: 104px; }
 .attachment-row { display:flex; align-items:center; gap:8px; margin-top:4px; }
 .attachment-row span { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .composer, .attachment-tools, #attachmentList { width:100%; min-width:0; max-width:100%; }
+
+#muteBtn .sound-muted, #muteBtn[aria-pressed="true"] .sound-waves { display: none; }
+#muteBtn[aria-pressed="true"] .sound-muted { display: inline; }

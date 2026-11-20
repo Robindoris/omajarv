@@ -202,7 +202,7 @@ function runAgentOnce({ config, text, sessionId, signal, onText, onActivity, env
 
     const timer = setTimeout(() => {
       fail(privateError(`${agentLabel(id)} timed out`));
-    }, 240000);
+    }, 15 * 60 * 1000);
 
     function emit(chunk) {
       if (!chunk) return;

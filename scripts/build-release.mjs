@@ -5,9 +5,9 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 const root=path.resolve(import.meta.dirname,'..');
 const output=path.resolve(process.argv[2] || path.join(root,'dist/omarchy-jarvis'));
-if(output===root || root.startsWith(output+path.sep)) throw new Error('Unsafe output directory');
+if(output===root || root.startsWith(output+path.sep) || output.startsWith(root+path.sep)) throw new Error('Unsafe output directory');
 if(fs.existsSync(output) && fs.readdirSync(output).length) throw new Error('Output directory must be empty; existing files were kept');
-const fixed=['package.json','package-lock.json','manifest.json','README.md','LICENSE','SECURITY.md','PRIVACY.md','install.sh','.gitignore','preview.png','docs/screenshots/desktop-assistant.png','docs/screenshots/phone-voice.png'];
+const fixed=['package.json','package-lock.json','manifest.json','README.md','LICENSE','SECURITY.md','PRIVACY.md','install.sh','.gitignore','preview.png'];
 const directories=['frontend','bin','server','plugin','docs','scripts','tests','systemd','skills'];
 const allowed=file=>file==='server/public/core.glb' || /\.(?:mjs|qml|jsx|js|css|html|md|template)$/.test(file) || ['jarvis','manifest.json','icon-192.png','icon-512.png'].includes(path.basename(file));
 const files=[...fixed];
@@ -21,7 +21,10 @@ for(const dir of directories)visit(dir);
 const secret=/(?:-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|\b(?:ghp_|github_pat_|sk-proj-)[A-Za-z0-9_]{20,}|AKIA[A-Z0-9]{16})/;
 const hashes=[];
 for(const name of [...new Set(files)].sort()){
- const source=path.join(root,name),data=fs.readFileSync(source);
+ const source=path.join(root,name);
+ const stat=fs.lstatSync(source);
+ if(!stat.isFile() || stat.isSymbolicLink())throw new Error('Non-regular release input refused: '+name);
+ const data=fs.readFileSync(source);
  // Security scanner code itself describes credential signatures, not credentials.
  if(secret.test(data.toString('utf8')))throw new Error('Possible credential; refusing release: '+name);
  const destination=path.join(output,name);fs.mkdirSync(path.dirname(destination),{recursive:true});fs.copyFileSync(source,destination);

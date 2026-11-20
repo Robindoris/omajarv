@@ -15,6 +15,31 @@ Ui.Panel {
   manageIpc: false
   property var anchorItem: null
   property var hostWidget: null
+  property bool showReminders: false
+  property bool notificationBusy: false
+  property string notificationError: ""
+  property var notificationDetails: null
+  property string notificationInput: ""
+  function notificationAction(action, id, minutes) {
+    if (hostWidget && hostWidget.calendarStateDir) {
+      if (notificationActionProc.running || !hostWidget.calendarAvailable) return
+      notificationBusy = true
+      notificationError = ""
+      hostWidget.calendarGeneration++
+      notificationInput = JSON.stringify({action: action, id: id, minutes: minutes})
+      notificationActionProc.running = true
+      return
+    }
+    if (!desktop.running || !hostWidget || !hostWidget.calendarAvailable) {
+      notificationError = "Calendar is reconnecting. Refresh and try again."
+      if (!desktop.running) desktop.running = true
+      return
+    }
+    notificationBusy = true
+    notificationError = ""
+    hostWidget.calendarGeneration++
+    command({action: action, id: id, minutes: minutes})
+  }
   property var status: ({})
   property bool statusLoaded: false
   property var setup: ({})
@@ -70,6 +95,31 @@ Ui.Panel {
   property bool savingPersonality: false
   property var modelListing: ({ id: "", listed: false, models: [] })
   property string modelBusy: ""
+  Controls.Popup {
+    id: notificationPopup
+    parent: panelContent
+    anchors.centerIn: parent
+    width: Math.max(200, panelContent.width - Style.space(16))
+    height: Math.max(160, panelContent.height - Style.space(16))
+    modal: true; focus: true; padding: Style.space(12)
+    closePolicy: Controls.Popup.CloseOnEscape | Controls.Popup.CloseOnPressOutside
+    onClosed: { root.showReminders = false; reminderButton.forceActiveFocus() }
+    background: Rectangle { color: OmarchyCommons.Color.background; border.color: OmarchyCommons.Color.accent; radius: Style.cornerRadius }
+    contentItem: ColumnLayout {
+      Ui.Button { text: "Close reminders"; bordered: true; focusable: true; onClicked: notificationPopup.close() }
+      NotificationInbox {
+        Layout.fillWidth: true; Layout.fillHeight: true
+        items: root.hostWidget ? root.hostWidget.calendarItems : []
+        loaded: root.hostWidget ? root.hostWidget.calendarLoaded : false
+        available: root.hostWidget ? root.hostWidget.calendarAvailable : false
+        busy: root.notificationBusy
+        error: root.notificationError
+        details: root.notificationDetails
+        onRefresh: { root.notificationError = ""; if (root.hostWidget) root.hostWidget.refreshNotifications(); if (!desktop.running) desktop.running = true }
+        onAction: function(action, notificationId, minutes) { root.notificationAction(action, notificationId, minutes) }
+      }
+    }
+  }
   Controls.Popup {
     id: personalityEditor
     property int revision: 0
@@ -142,13 +192,17 @@ Ui.Panel {
 
   function open() {
     root.controller.show()
+    if (hostWidget) hostWidget.refreshNotifications()
+    if (showReminders && tab === 0) Qt.callLater(function() { notificationPopup.open() })
     root.refresh()
     if (!setupProc.running) setupProc.running = true
     if (!desktop.running) desktop.running = true
     else { root.command({ action: "history" }); root.command({ action: "models" }) }
-    Qt.callLater(function() { if (root.tab === 0) input.forceActiveFocus() })
+    Qt.callLater(function() { if (root.tab === 0 && !notificationPopup.opened) input.forceActiveFocus() })
   }
   function close() {
+    notificationPopup.close()
+    root.showReminders = false
     personalityEditor.close()
     if (root.assistantState === "Listening") root.command({ action: "stop" })
     root.controller.hide()
@@ -202,7 +256,19 @@ Ui.Panel {
     transcript.positionViewAtEnd()
   }
   function handleEvent(data) {
-    if (data.event === "attachments") {
+    if (data.event === "notifications") {
+      root.notificationBusy = false
+      root.notificationError = ""
+      if (root.hostWidget) root.hostWidget.applyNotifications(data)
+    } else if (data.event === "notificationError") {
+      root.notificationBusy = false
+      root.notificationError = data.error
+      if (root.hostWidget) root.hostWidget.calendarAvailable = false
+    } else if (data.event === "notificationDetails") {
+      root.notificationBusy = false
+      root.notificationDetails = data
+      root.notificationAction("notificationRead", data.id, 0)
+    } else if (data.event === "attachments") {
       root.attachments = data.files || []
     } else if (data.event === "clipboardText") {
       input.insert(input.cursorPosition, data.text || "")
@@ -305,12 +371,27 @@ Ui.Panel {
     onTriggered: root.activitySeconds = Math.floor((Date.now() - root.activityStarted) / 1000)
   }
   Process {
+    id: notificationActionProc
+    command: [root.jarvisBin, "notifications", "--state-dir", root.hostWidget ? root.hostWidget.calendarStateDir : ""]
+    stdinEnabled: true
+    onStarted: { write(root.notificationInput); stdinEnabled = false }
+    stdout: StdioCollector { id: notificationActionOutput; waitForEnd: true }
+    onRunningChanged: { if (running) stdinEnabled = true }
+    onExited: function(code) {
+      var payload
+      try { payload = JSON.parse(notificationActionOutput.text) } catch(e) { payload = {event:"notificationError", error:"Calendar notifications unavailable. Refresh and try again."} }
+      root.handleEvent(payload)
+    }
+  }
+  Process {
     id: desktop
     command: [root.jarvisBin, "desktop"]
     stdinEnabled: true
     stdout: SplitParser { onRead: function(line) { try { root.handleEvent(JSON.parse(line)) } catch(e) { root.notice = "Invalid assistant response" } } }
     stderr: StdioCollector { id: desktopErr; waitForEnd: true }
     onExited: function(code) {
+      root.notificationBusy = false
+      root.notificationError = "Calendar connection interrupted. Refresh to reconnect."
       root.savingPersonality = false
       root.assistantState = "Ready"
       if (code !== 0) root.lastOutcome = "Failed"
@@ -394,7 +475,7 @@ Ui.Panel {
     focusTarget: root.tab === 0 ? input : keyCatcher
     contentWidth: panel.fittedContentWidth(Style.space(500))
     contentHeight: panel.fittedContentHeight(Style.space(680))
-    Ui.PanelKeyCatcher { id: keyCatcher; anchors.fill: parent; blocked: modelPicker.popupOpen; onCloseRequested: root.close() }
+    Ui.PanelKeyCatcher { id: keyCatcher; anchors.fill: parent; blocked: modelPicker.popupOpen || notificationPopup.opened; onCloseRequested: root.close() }
     ColumnLayout {
       id: panelContent
       anchors.fill: parent
@@ -420,6 +501,14 @@ Ui.Panel {
               focusable: true
               Keys.onEscapePressed: root.close()
               Layout.fillWidth: true; text: "Phone"; selected: root.tab === 1; bordered: true; onClicked: { root.tab = 1; root.qrImage = ""; root.qrForUrl = ""; root.refresh(); root.loadQr() } }
+      }
+      Ui.Button {
+        id: reminderButton
+        visible: root.tab === 0
+        Layout.fillWidth: true
+        text: "Calendar reminders · " + (root.hostWidget ? root.hostWidget.calendarUnread : 0) + " unread"
+        focusable: true; bordered: true
+        onClicked: { root.showReminders = true; notificationPopup.open(); if (root.hostWidget) root.hostWidget.refreshNotifications() }
       }
       Ui.PanelSeparator { Layout.fillWidth: true }
       RowLayout {
@@ -592,11 +681,11 @@ Ui.Panel {
               RowLayout {
                 required property var modelData
                 Layout.fillWidth: true
-                Text { Layout.fillWidth: true; text: modelData.name + " (" + Math.ceil(modelData.size / 1024) + " KB)"; textFormat: Text.PlainText; elide: Text.ElideMiddle; color: root.fg; font.family: root.fontFamily }
+                Text { textFormat: Text.PlainText; Layout.fillWidth: true; text: modelData.name + " (" + Math.ceil(modelData.size / 1024) + " KB)"; elide: Text.ElideMiddle; color: root.fg; font.family: root.fontFamily }
                 Ui.Button { text: "Remove"; bordered: true; enabled: !root.working; onClicked: root.command({action:"removeAttachment", id:modelData.id}) }
               }
             }
-            Text { Layout.fillWidth: true; text: "Files are shared with your selected agent. Up to 4 files, 10 MB each."; textFormat: Text.PlainText; wrapMode: Text.WordWrap; color: OmarchyCommons.Color.muted; font.pixelSize: Style.font.bodySmall }
+            Text { textFormat: Text.PlainText; Layout.fillWidth: true; text: "Files are shared with your selected agent. Up to 4 files, 10 MB each."; wrapMode: Text.WordWrap; color: OmarchyCommons.Color.muted; font.pixelSize: Style.font.bodySmall }
             RowLayout {
               Ui.Button { text: "Attach files"; bordered: true; enabled: root.running && !root.working && !root.remoteBusy && root.attachments.length < 4; onClicked: root.command({action:"attachFiles"}) }
               Ui.Button { text: "Paste image"; bordered: true; enabled: root.running && !root.working && !root.remoteBusy && root.attachments.length < 4; onClicked: root.command({action:"pasteClipboard", imageOnly:true}) }

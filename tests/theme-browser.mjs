@@ -229,6 +229,23 @@ if(process.env.JARVIS_TEST_WEBGL){
  assert.equal(JSON.parse(core.result.value).coreModel,'loaded','Blender core must load in WebGL');
  assert.equal(JSON.parse(core.result.value).coreClips,'7','All six rotors and plasma must animate');
 }
+const scrollbars = async () => (await call('Runtime.evaluate',{expression:`(() => {
+ const selectors=['html','.transcript','.saved-chat-list','#settings-panel','#personalityDialog'];
+ const values=selectors.map(selector=>getComputedStyle(document.querySelector(selector)).scrollbarColor);
+ const probe=document.createElement('div');
+ probe.style.cssText='position:fixed;left:0;top:0;width:100px;height:100px;overflow:auto';
+ probe.innerHTML='<div style="width:300px;height:300px"></div>';
+ document.body.append(probe);probe.scrollTo(40,50);
+ const result={values,x:probe.scrollLeft,y:probe.scrollTop,probe:getComputedStyle(probe).scrollbarColor};
+ probe.remove();return result;
+})()`,returnByValue:true})).result.value;
+const normalScrollbars=await scrollbars();
+assert.notEqual(normalScrollbars.probe,'auto','Overflow outside chat must use theme colors');
+assert.ok(normalScrollbars.values.every(value=>value===normalScrollbars.probe),'Primary scroll regions must use the same palette');
+assert.deepEqual([normalScrollbars.x,normalScrollbars.y],[40,50]);
+await call('Emulation.setEmulatedMedia',{features:[{name:'forced-colors',value:'active'}]});
+assert.equal((await scrollbars()).probe,'auto','Forced colors must restore native scrollbar colors');
+await call('Emulation.setEmulatedMedia',{features:[]});
 const dimensions=await call('Runtime.evaluate',{expression:'JSON.stringify({width:innerWidth,height:innerHeight})',returnByValue:true});
 const overflow = await call('Runtime.evaluate',{expression:`JSON.stringify(Array.from(document.querySelectorAll('body *')).filter(e=>e.getBoundingClientRect().right>${viewport.width}).map(e=>[e.tagName,e.className,e.getBoundingClientRect().width,e.getBoundingClientRect().right]))`,returnByValue:true});
 assert.deepEqual(JSON.parse(dimensions.result.value),{width:viewport.width,height:viewport.height},overflow.result.value);
@@ -459,6 +476,12 @@ fs.writeFileSync(path.join(screenshotRoot,'jarvis-settings-'+viewport.width+'.pn
 console.log('Checking camera onboarding and streams at '+viewport.width+'px');
 await call('Emulation.setVirtualTimePolicy',{policy:'advance'});
 const cameraEval=async expression=>{const r=await call('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true,userGesture:true});if(r.exceptionDetails)throw new Error(r.exceptionDetails.text);return r.result.value;};
+assert.equal(await cameraEval("document.getElementById('muteBtn').getAttribute('aria-pressed')"),'false');
+await cameraEval("document.getElementById('muteBtn').click()");
+assert.equal(await cameraEval("document.getElementById('muteBtn').getAttribute('aria-pressed')"),'true');
+assert.equal(await cameraEval("document.getElementById('muteBtn').getAttribute('aria-label')"),'Unmute voice output');
+await cameraEval("document.getElementById('muteBtn').click()");
+assert.equal(await cameraEval("document.getElementById('muteBtn').getAttribute('aria-pressed')"),'false');
 async function cameraWait(expression){for(let i=0;i<150;i++){if(await cameraEval(expression))return;await new Promise(r=>setTimeout(r,20));}throw new Error('Camera browser condition timed out: '+expression);}
 await cameraEval(`(()=>{const q=document.querySelector('[aria-label="Camera RTSP address"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(q,'rtsp://192.168.1.30/fixture');q.dispatchEvent(new Event('input',{bubbles:true}));})()`);
 await cameraEval("document.querySelector('.camera-enable input').click()");
