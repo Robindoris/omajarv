@@ -178,10 +178,10 @@ export async function runAgent(options) {
   }
 }
 
-function runAgentOnce({ config, text, sessionId, signal, onText, onActivity, env = {}, images = [] }) {
+function runAgentOnce({ config, text, sessionId, signal, onText, onActivity, env = {}, images = [], requestApproval }) {
   const id = resolveAgent(config);
   const prompt = buildPrompt(text, config);
-  if (id === "hermes") return runHermes({config, prompt, sessionId, signal, onText, onActivity, env});
+  if (id === "hermes") return runHermes({config, prompt, sessionId, signal, onText, onActivity, env, requestApproval});
   const spec = adapter(id, { prompt, session: sessionId, config, images });
 
   return new Promise((resolve, reject) => {

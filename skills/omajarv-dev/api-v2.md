@@ -54,6 +54,7 @@ Tailscale terminates external HTTPS. Do not change that boundary incidentally.
 | POST `/api/kanban/stop` | `{id}` aborts that actual running task; releases before retry |
 | GET `/api/sudo/pending` | current turn's one-use encrypted approval requests; HTTPS-backed bridge only |
 | POST `/api/sudo/reply` | `{id,ciphertext}` or `{id,cancel:true}`; see voice-security.md; never a password field |
+| GET/POST `/api/approvals` | pending Hermes ACP permission prompts, delivery/expiry state and first-wins Approve/Reject replies; `lib/approvals.mjs`; other transports report the limitation instead of prompting |
 
 Public assets: `/theme.css` for first paint, PNG install icons and `/favicon.ico`
 (alias of the 192px PNG), bundled CSS/JS. GET `/` is an authenticated page (401

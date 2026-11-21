@@ -4,7 +4,7 @@ import readline from 'node:readline';
 import { paths } from './config.mjs';
 import { privateError } from './privacy.mjs';
 
-export function runHermes({config, prompt, sessionId, signal, onText, onActivity, env = {}}) {
+export function runHermes({config, prompt, sessionId, signal, onText, onActivity, env = {}, requestApproval}) {
   if (signal?.aborted) return Promise.reject(privateError('Cancelled'));
   return new Promise((resolve, reject) => {
     const child = spawn('hermes', ['acp'], {
@@ -16,6 +16,7 @@ export function runHermes({config, prompt, sessionId, signal, onText, onActivity
     let toolStarted = false;
     let settled = false, cancelling = false, cancelTimer, stderr = '';
     const pending = new Map();
+    const responded = new Set();
     const send = value => child.stdin.write(JSON.stringify({jsonrpc:'2.0', ...value}) + '\n');
     const request = (method, params) => new Promise((resolve, reject) => {
       const id = ++nextId;
@@ -75,10 +76,24 @@ export function runHermes({config, prompt, sessionId, signal, onText, onActivity
         }
       } else if (message.method && message.id !== undefined) {
         if (message.method === 'session/request_permission') {
-          const option = config.agentFullAccess === true
-            ? message.params?.options?.find(option => option.kind === 'allow_once') : null;
-          send({id:message.id, result:{outcome:option
-            ? {outcome:'selected', optionId:option.optionId} : {outcome:'cancelled'}}});
+          const options = Array.isArray(message.params?.options) ? message.params.options : [];
+          const respond = selection => {
+            if (settled || message.id === undefined || responded.has(message.id)) return;
+            responded.add(message.id);
+            send({id:message.id, result:selection?.optionId
+              ? {outcome:'selected', optionId:selection.optionId} : {outcome:'cancelled'}});
+          };
+          if (config.agentFullAccess === true) {
+            respond(options.find(option => option.kind === 'allow_once'));
+          } else if (requestApproval) {
+            // Real user decision from the shared inbox; expiry resolves as cancelled.
+            Promise.resolve(requestApproval({toolCall:message.params?.toolCall, options, sessionId:message.params?.sessionId || session}))
+              .catch(() => ({outcome:'cancelled'}))
+              .then(selection => respond(selection?.outcome === 'selected' ? selection : null));
+          } else {
+            // No approval transport: keep the prior safe cancellation, never invent a prompt.
+            respond(null);
+          }
         } else {
           send({id:message.id, error:{code:-32601, message:'Client capability unavailable'}});
         }

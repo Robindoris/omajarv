@@ -36,6 +36,7 @@ import { historyFor, appendHistory as saveHistory, clearHistory, conversations, 
 import { createAttachments, attachmentPrompt, MAX_FILE } from "./lib/attachments.mjs";
 import { createPersonality } from "./lib/personality.mjs";
 import { createSudoSession } from "./lib/sudo.mjs";
+import { createApprovalBroker } from "./lib/approvals.mjs";
 import { publicAgentError, writePrivateFile } from "./lib/privacy.mjs";
 
 import {parseKanbanReport} from './lib/kanban-report.mjs';
@@ -249,6 +250,9 @@ let turnCount = 0;
 let chatBusy = false;
 let projectChanging=false,fileJobs=0;
 const agentActivity=createAgentActivity();
+const approvals=createApprovalBroker({timeoutMs:Math.min(600000,Math.max(250,Number(config.approvalTimeoutMs)||120000))});
+// Hermes ACP forwards real permission requests to every device; other adapters keep their own modes and never fake a prompt.
+const approvalBridge=(source,task=null)=>config.agentFullAccess===true?undefined:(value=>approvals.request({source,task,...value}));
 let activeAbort = null;
 let sudoSession = null;
 const voiceSetup = createVoiceSetup(config, {busy:()=>chatBusy || voiceJobs>0});
@@ -271,6 +275,7 @@ const boardRunner = createKanbanRunner({
         config:{...executionConfig(),systemPrompt:personality.prompt()+boardInstruction()+`\nYou are executing board task ${task.id}. Complete and verify this user-authorized task; do not queue or change its execution state. End with a fenced jarvis-report JSON object containing outcome (completed, failed or blocked), changes, verification (commands and actual results), blockers and followUp (one suggestion), all text fields strings of at most 4000 characters. Only claim completed after verification; report denied edits or unfinished work as blocked. Never include credentials.`+(sudoSession?'\n'+sudoSession.instruction:'')},
         text:task.title+(task.notes?'\n\nTask notes:\n'+task.notes:''),
         sessionId:rememberedSession(agent.id),signal,env:sudoSession?.env,
+        requestApproval:approvalBridge('kanban',{id:task.id,title:task.title}),
         onActivity:phase=>agentActivity.phase(phase),
         onText:chunk=>{agentActivity.phase('responding');reply+=chunk;},
       });
@@ -279,7 +284,7 @@ const boardRunner = createKanbanRunner({
       if(result.agent!==agent.id)await appendHistory(result.agent,'user',`Kanban task: ${task.title}\n${task.notes}`);
       rememberSession(result.agent,result.session);await appendHistory(result.agent,'assistant',reply.trim(),{session:result.session,model:activeModel(config)});turnCount++;const report=parseKanbanReport(reply);agentActivity.finish(report.outcome==='completed'?'completed':'error');return report;
     }catch(error){agentActivity.finish(signal.aborted?'interrupted':'error');await appendHistory(agent.id,'system',signal.aborted?'Kanban task interrupted.':publicAgentError(error)).catch(()=>{});throw error;}
-    finally{sudoSession?.close();sudoSession=null;activeAbort=null;}
+    finally{sudoSession?.close();sudoSession=null;activeAbort=null;approvals.cancel({source:'kanban',reason:'cancelled-agent'});}
   }
 });
 
@@ -459,6 +464,26 @@ async function handleApi(req, res, pathname, params) {
       return sendJson(res, 200, {ok:true});
     } catch { return sendJson(res, 400, {error:"Invalid authorization response."}); }
   }
+  if (pathname === "/api/approvals" && req.method === "GET") {
+    const value = approvals.list();
+    const id = agentStatus(config).id;
+    return sendJson(res, 200, {
+      requests: value.requests, history: value.history.slice(0, 12),
+      transport: config.agentFullAccess === true ? 'full-access' : id === 'hermes' ? 'acp' : 'none',
+      agent: id, expiresAfterMs: Math.min(600000, Math.max(250, Number(config.approvalTimeoutMs) || 120000)),
+    });
+  }
+  if (pathname === "/api/approvals" && req.method === "POST") {
+    if (!String(req.headers['content-type'] || '').startsWith('application/json') || req.headers['sec-fetch-site'] === 'cross-site') {
+      return sendJson(res, 403, {error:"Use a same-site JSON approval reply."});
+    }
+    let input;
+    try { input = JSON.parse((await readBody(req, 2048)).toString()); } catch { return sendJson(res, 400, {error:"Invalid approval reply."}); }
+    if (input?.action !== 'reply' || typeof input.id !== 'string' || input.id.length > 64) return sendJson(res, 400, {error:"Reply requires an approval id."});
+    const result = approvals.reply(input);
+    if (result.ok) return sendJson(res, 200, {ok:true});
+    return sendJson(res, result.status, {ok:false, ...(result.outcome ? {outcome:result.outcome} : {}), error: result.error});
+  }
   if (pathname === "/api/voice-setup" && req.method === "GET") return sendJson(res,200,voiceSetup.view());
   if (pathname === "/api/voice-setup" && req.method === "POST") {
     if (!/^application\/json(?:\s*;|$)/i.test(String(req.headers['content-type'] || '')) || req.headers['sec-fetch-site'] === 'cross-site') return sendJson(res,400,{error:'Use same-site JSON for model setup.'});
@@ -548,6 +573,7 @@ async function handleApi(req, res, pathname, params) {
     if (chatBusy) return sendJson(res, 409, { ok: false, error: "Stop the current reply before starting a new conversation." });
     chatBusy=true;
     try {
+      approvals.cancel({reason:'cancelled-agent'});
       await clearHistory();
       forgetSessions();
       personality.resetTranscript();
@@ -672,6 +698,7 @@ async function handleApi(req, res, pathname, params) {
         text: (text || "Please inspect the attached files.") + attachmentPrompt(files),
         images: files.filter(f => f.type === "image").map(f => f.path),
         sessionId: rememberedSession(agent.id),
+        requestApproval:approvalBridge('chat'),
         onActivity: phase => {if(agentActivity.phase(phase))send('activity',agentActivity.snapshot());},
         onAgentChange: next => send('meta', {agent:next.id, label:next.label, model:next.model, fallback:true}),
         signal: abort.signal,
@@ -699,6 +726,7 @@ async function handleApi(req, res, pathname, params) {
       for (const file of files) file.active = false;
       sudoSession?.close();
       sudoSession = null;
+      approvals.cancel({source:'chat',reason:'cancelled-agent'});
       clearInterval(heartbeat);
       activeAbort = null;
       chatBusy = false;

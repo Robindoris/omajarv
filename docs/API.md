@@ -42,6 +42,29 @@ cross-site browser submissions. Passwords are limited to 256 UTF-8 bytes without
 line breaks or NUL. Requests expire after 120 seconds and are cancelled by Stop
 or turn completion. No HTTP response returns a password or private key.
 
+### Agent approval inbox
+
+`GET /api/approvals` returns `{ requests, history, transport, agent, expiresAfterMs }`.
+`requests` are pending Hermes ACP permission prompts: `{ id, source, task, summary,
+detail, paths, options, createdAt, expiresAt, deliveredAt }`. The first successful
+read marks a request delivered, so an answered prompt is distinguishable from one
+that timed out on an offline device. `history` keeps recent decisions with distinct
+outcomes: `approved`, `rejected`, `expired`, `expired-undelivered`,
+`cancelled-agent`, `unsupported` and `overflow`. `transport` is `acp` only while
+Hermes is active without full access; with `agentFullAccess` the agent answers
+itself (`full-access`), and other adapters report `none` — JARVIS never invents a
+prompt for transports that cannot forward one.
+
+`POST /api/approvals` accepts same-site JSON `{ action:"reply", id, decision:
+"approve"|"reject", optionId? }` within 2 KiB. Approval selects the matching allow
+option (defaulting to `allow_once`); rejection and every expiry path answer the
+agent with an explicit cancellation, never a fabricated selection. The first reply
+wins; later replies return 409 with the recorded `outcome` and unknown ids 404.
+Requests expire after `approvalTimeoutMs` (default 120 s, clamped 250 ms–10 min)
+and Stop, session reset or turn completion cancel them as `cancelled-agent`,
+which is never reported as a user rejection. Prompts carry only the agent's own
+action summary — no credentials are collected or displayed in chat.
+
 ## `GET /api/personality` and `POST /api/personality`
 
 Both endpoints require the normal bearer credential. GET returns `assistantName`,
