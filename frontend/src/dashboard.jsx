@@ -6,6 +6,8 @@ import {createRoot} from 'react-dom/client';
 import {createPortal} from 'react-dom';
 import {PanelLeft,Plus,ArrowUpRight,Trash2,X,Columns3,MessageSquare,Settings,FolderOpen} from 'lucide-react';
 import {Button} from './components/ui/button';
+import {Field} from './components/ui/field';
+import {Select} from './components/ui/select';
 import {CalendarPage,NotificationInbox} from './calendar';
 import {CalendarDays,Bell} from 'lucide-react';
 import {ProjectSwitcher} from './project-switcher';
@@ -39,7 +41,7 @@ function Dashboard(){
   {createPortal(<NotificationInbox active={page==='notifications'} onCount={setUnread}/>,document.getElementById('notifications-panel'))}
   {createPortal(<FilesPage key={'files:'+projectId} active={page==='files'} searchTarget={searchTarget?.type==='files'?searchTarget:null}/>,document.getElementById('files-panel'))}
   {createPortal(<KanbanBoard key={'board:'+projectId} active={page==='kanban'} searchTarget={searchTarget?.type==='tasks'?searchTarget:null} projectState={projectState}/>,document.getElementById('kanban-panel'))}
-  {createPortal(selected&&<div className="saved-conversation"><div className="archive-heading"><div><span className="eyebrow">SAVED CONVERSATION / {selected.agent}</span><h2>{selected.title}</h2>{!selected.active&&projectState&&<label>Move conversation to project<select aria-label="Move conversation to project" value={selected.projectId||''} onChange={async e=>{try{const next=await window.jarvisAPI('/api/projects',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'associateConversation',revision:projectState.revision,id:selected.id,projectId:e.target.value||null})});setProjectState(next);setSelected(null);load();}catch(e){window.alert(e.message);}}}><option value="">Ungrouped</option>{projectState.projects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>}</div><Button variant="outline" onClick={()=>document.getElementById('chatView').click()}>Current conversation</Button></div><div className="archive-messages">{selected.messages.map((m,i)=><article key={i} className={'archive-message '+m.role}><span>{m.role}</span><p>{m.text}</p></article>)}</div></div>,document.getElementById('archive-panel'))}
+  {createPortal(selected&&<div className="saved-conversation"><div className="archive-heading"><div><span className="eyebrow">SAVED CONVERSATION / {selected.agent}</span><h2>{selected.title}</h2>{!selected.active&&projectState&&<Field label="Move conversation to project" htmlFor="archive-project-select"><Select id="archive-project-select" aria-label="Move conversation to project" value={selected.projectId||''} onChange={async e=>{try{const next=await window.jarvisAPI('/api/projects',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'associateConversation',revision:projectState.revision,id:selected.id,projectId:e.target.value||null})});setProjectState(next);setSelected(null);load();}catch(e){window.alert(e.message);}}}><option value="">Ungrouped</option>{projectState.projects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</Select></Field>}</div><Button variant="outline" onClick={()=>document.getElementById('chatView').click()}>Current conversation</Button></div><div className="archive-messages">{selected.messages.map((m,i)=><article key={i} className={'archive-message '+m.role}><span>{m.role}</span><p>{m.text}</p></article>)}</div></div>,document.getElementById('archive-panel'))}
  </>;
 
 }

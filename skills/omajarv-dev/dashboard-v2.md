@@ -88,6 +88,13 @@ for the animated backdrop, which can conflict with Tailwind's `grid` utility.
   for cards/dialogs/statuses and Three.js. `/theme.css` supplies first paint and
   authenticated `/api/theme` refreshes visible clients every two seconds. Keep the
   last valid palette through theme-file swaps. Do not bake one theme into assets.
+- Kanban renders the shared core as a quiet, non-interactive backdrop behind the
+  board inside `.stage`, the same treatment as the conversation tab. The reserved
+  activity rail keeps the board position fixed through activity start, end and
+  reconnects; do not reintroduce an activity-gated core slot.
+- Sidebar form controls use the owned `Input`, `Select` and `Field` primitives in
+  `frontend/src/components/ui/` rather than per-component CSS so the search bar,
+  project switcher and archive move stay visually unified.
 - Keep install icons public and credential-free: explicit PNG favicon/apple-touch
   links, manifest icon URLs, `/favicon.ico` alias. The worker caches public palette
   CSS and icons only, never conversations, API responses or token-bearing pages.
