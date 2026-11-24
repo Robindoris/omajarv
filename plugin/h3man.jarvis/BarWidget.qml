@@ -19,8 +19,11 @@ BarWidget {
   property int pollSeconds: setting("pollSeconds", 20)
 
   readonly property string jarvisBin: {
-    var home = Quickshell.env("HOME") || ""
-    return home ? home + "/.local/bin/jarvis" : "jarvis"
+    // Older standalone widget installs only contain QML and use the user's CLI.
+    var source = Qt.resolvedUrl(".").toString()
+    if (source.endsWith("/plugin/h3man.jarvis/"))
+      return decodeURIComponent(Qt.resolvedUrl("../../bin/jarvis").toString().replace(/^(file|qs):\/\//, ""))
+    return Quickshell.env("HOME") + "/.local/bin/jarvis"
   }
   readonly property color tint: online ? OmarchyCommons.Color.accent : (bar ? bar.foreground : OmarchyCommons.Color.foreground)
 

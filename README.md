@@ -83,24 +83,14 @@ OpenSSL already available:
 omarchy plugin add https://github.com/Robindoris/omajarv.git --enable
 ```
 
-This clones the current upstream source and enables the reactor. It does not
-install the launcher, start the bridge, install packages or download models.
-Open the reactor and choose **Assistant → Open setup** to run onboarding in a
-terminal. Package installation and model downloads require confirmation; keep
-network defaults for desktop-only use. Install and sign in to a supported coding
-agent separately. Its provider may process your requests and files.
+Open the reactor, choose **Assistant**, and send a text message using your
+configured, signed-in Omarchy coding agent. Opening the panel starts the bundled
+bridge on demand. Fresh installations listen on loopback. Your agent provider
+may process the requests and files you send.
 
-For text-only setup without package installation or model downloads, run:
-
-```bash
-bash "$HOME/.config/omarchy/plugins/h3man.jarvis/install.sh" --no-plugin --no-packages --no-models
-```
-
-That command still installs the launcher and starts the systemd user service.
-Keep the marketplace checkout: the launcher and service run from it. If Node.js,
-`curl`, `jq` or OpenSSL is missing, setup stops and explains the prerequisite;
-install missing prerequisites explicitly before retrying. Declining the regular
-package prompt stops that run; use the text-only command above to skip packages.
+**Open setup** offers voice models, phone networking and a persistent user
+service. Text chat works without running setup. To stop the on-demand bridge
+before removing the plugin, choose **Stop bridge** in the open panel.
 
 If you already installed Omajarv from another clone, keep using that installation
 and its update instructions; do not add a second copy over it. `Open setup` prefers

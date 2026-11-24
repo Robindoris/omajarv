@@ -159,16 +159,22 @@ Ui.Panel {
   readonly property string link: qrTailscale ? String(status.tailscaleUrl || "") : qrLan ? String(status.lanUrl || "") : String(status.tunnelUrl || "")
   readonly property color fg: bar ? bar.foreground : OmarchyCommons.Color.foreground
   readonly property string fontFamily: bar ? bar.fontFamily : Style.font.family
-  readonly property string jarvisBin: (Quickshell.env("HOME") || "") + "/.local/bin/jarvis"
+  readonly property string jarvisBin: {
+    // Older standalone widget installs only contain QML and use the user's CLI.
+    var source = Qt.resolvedUrl(".").toString()
+    if (source.endsWith("/plugin/h3man.jarvis/"))
+      return decodeURIComponent(Qt.resolvedUrl("../../bin/jarvis").toString().replace(/^(file|qs):\/\//, ""))
+    return Quickshell.env("HOME") + "/.local/bin/jarvis"
+  }
 
   function open() {
     root.controller.show()
     root.refresh()
     if (!setupProc.running) setupProc.running = true
-    if (!desktop.running) desktop.running = true
-    else { root.command({ action: "history" }); root.command({ action: "models" }) }
+    root.run("start")
     Qt.callLater(function() { if (root.tab === 0) input.forceActiveFocus() })
   }
+  onRunningChanged: if (root.running && root.opened && root.tab === 0) input.forceActiveFocus()
   function close() {
     personalityEditor.close()
     if (root.assistantState === "Listening") root.command({ action: "stop" })
@@ -402,6 +408,10 @@ Ui.Panel {
       root.busy = false
       root.notice = (actionOut.text || actionErr.text || (code === 0 ? "" : "Bridge command failed")).trim()
 
+      if (code === 0 && actionProc.command[2] === "start" && root.opened) {
+        if (!desktop.running) desktop.running = true
+        else { root.command({ action: "history" }); root.command({ action: "models" }) }
+      }
       root.refresh()
     }
   }
@@ -497,7 +507,7 @@ Ui.Panel {
             }
             Text { textFormat: Text.PlainText;
               Layout.fillWidth: true
-              text: "Setup installs the launcher and user service. It asks before installing packages or downloading models. You can skip voice and use text chat."
+              text: "Text chat uses your configured Omarchy agent. Open setup for voice models, phone access, or a persistent user service."
               wrapMode: Text.WordWrap; color: OmarchyCommons.Color.muted; font.family: root.fontFamily; font.pixelSize: Style.font.caption
             }
             Ui.Button { Layout.fillWidth: true; text: "Open setup"; bordered: true; focusable: true; onClicked: root.launchSetup() }

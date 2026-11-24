@@ -1,9 +1,8 @@
 # Marketplace installation review
 
-Omajarv (`h3man.jarvis`) needs two explicit steps: add/enable the bar plugin, then
-run setup to install its launcher and independent systemd user service. The plugin
-manager does not run `install.sh` automatically. Enabling the widget must not
-silently install dependencies, download models or expose the bridge to a network.
+The root plugin includes the launcher and starts the local bridge when the
+panel opens. A configured Omarchy agent provides text chat. Setup is optional
+for a persistent service, voice models, and remote phone access.
 
 ## Current listing
 
@@ -23,7 +22,7 @@ Sources: [listing](https://plugins.omarchy.org/plugin.html?id=h3man.jarvis),
 The website's `marketplaceInstallAvailable()` requires `installAvailable` and an
 upstream status other than `failed`; it renders the catalog's `installCommand`.
 A README or upstream manifest change cannot switch this on. The marketplace
-maintainer controls the catalog and decides whether a two-step install qualifies.
+maintainer controls the catalog and decides whether to approve standard installation.
 
 ## User installation steps
 
@@ -44,58 +43,16 @@ maintainer controls the catalog and decides whether a two-step install qualifies
    git -C "$HOME/.config/omarchy/plugins/h3man.jarvis" rev-parse HEAD
    ```
 
-3. Open **Assistant → Open setup**. Review the package, voice-model and optional
-   network prompts. A package refusal stops that run; text-only setup is available:
+3. Open the reactor and send a message from **Assistant**. Use **Open setup**
+   for optional features. A clean install listens on loopback.
+4. Stop the bridge from the panel before removing the marketplace checkout.
+   If you installed the optional service, run `jarvis uninstall` first.
 
-   ```bash
-   bash "$HOME/.config/omarchy/plugins/h3man.jarvis/install.sh" --no-plugin --no-packages --no-models
-   ```
+## Marketplace review
 
-   This explicit setup installs the CLI and starts the user service. Fresh config
-   uses loopback, public tunnels off and unrestricted agent access off. Global
-   coding-agent instructions require their separate opt-in flag. Existing config,
-   including intentional network/full-access settings, is preserved.
-4. Run `jarvis status` and try native text chat. Add voice and phone access only
-   when desired. Keep tokens, access links, QR images and logs private; do not put
-   them in a marketplace report.
-5. Finish active requests before updates. Keep the source directory while installed.
-   After an upstream update, rerun setup when launcher/service/dependency changes
-   require it. Source replacement alone does not restart an already running bridge;
-   use `jarvis restart` after the conversation is idle. Do not mix an existing
-   clone-based runtime with a second marketplace installation.
-6. Remove with `jarvis uninstall` **before** generic marketplace removal. It stops
-   and disables the independent service, retires owned phone forwarding, and removes
-   the unit, launcher and plugin. Config, local history and downloaded models remain;
-   remove retained data separately only if wanted. If setup never ran, use the
-   plugin manager's removal command. Generic removal is not a service uninstaller.
-
-## Validation and remaining gates
-
-- [x] Validate the proposed source in a HEAD-based temporary snapshot containing
-  only the install-readiness changes, excluding pending voice work.
-- [x] Root and nested manifest validation; Bash/Node syntax; Qt 6 QML parsing.
-- [x] Marketplace-layout regression: source survives setup, CLI/unit target that
-  source, defaults stay private, no package/model/global-skill changes without opt-in,
-  reruns preserve config, current setup source wins over an older CLI, removal leaves
-  no dangling launcher. Test services, package managers and agents must be mocked.
-- [x] Existing install, onboarding, authenticated bridge, privacy, phone forwarding
-  and browser regressions. Exact results are recorded below.
-- [x] Build the allowlisted source package and verify its manifest, all 80 file
-  checksums and absence of runtime credentials, models, recordings and pending
-  voice-auth files. No artifact was published.
-- [ ] Clean disposable Omarchy session/VM smoke test: actual `plugin add --enable`,
-  first panel open, terminal onboarding, text chat with an authorized test agent,
-  idle update/restart, and uninstall. Automated fixture checks do not replace this
-  live Quickshell/plugin-manager integration check. Do not test it by replacing a
-  user's existing installation.
-- [ ] Review the diff; commit only install-readiness changes. Publish the reviewed
-  commit with explicit authorization, preserving pending unrelated work.
-- [ ] Request a listing refresh on existing issue #12542 with the exact commit and
-  test results. Do not open a duplicate submission. The maintainer must decide
-  whether to offer the command with the mandatory setup note, or retain Manual setup.
-- [ ] After maintainer approval, verify the live catalog fields, rendered command,
-  setup note, current name and verification snapshot. Approval of a previous commit
-  is not verification of a new one.
+Request verification for the exact upstream commit. Once listed, the separate
+standard-installation request requires a passing baseline or a matching
+installer-only review and a maintainer's standard-installation approval.
 
 ## Automated results — 11 November 2026
 
@@ -129,29 +86,3 @@ No real provider requests, package installations, model downloads, phone tunnel
 connections, user service changes or live desktop replacement were used. The
 remaining disposable-session GUI test and marketplace approval are still required
 before describing this as a verified one-command marketplace install.
-
-## Draft maintainer request — not submitted
-
-> Please review Omajarv (`h3man.jarvis`) for displaying the standard repository-add
-> command with an explicit two-step setup note. Proposed commit: **fill in after
-> committing the reviewed changes**.
->
-> Command: `omarchy plugin add https://github.com/Robindoris/omajarv.git --enable`
->
-> Required note: “Adds and enables the reactor only. Open Assistant → Open setup
-> to install the launcher and user service. Package/model downloads and phone
-> networking require explicit choices. Run jarvis uninstall before removing the
-> plugin; models, configuration and history are retained.”
->
-> Setup now prefers the marketplace installer over an older launcher, and removal
-> deletes its owned launcher before deleting the marketplace runtime source.
-> Fresh defaults remain loopback-only, public tunnels and unrestricted agent
-> access off; global coding-agent instructions require their separate opt-in.
->
-> Include exact automated results and disposable-session smoke-test results here.
-> Please refresh the displayed name to Omarchy Jarvis and review the new snapshot.
-> If mandatory service onboarding excludes the standard install command under
-> marketplace policy, please retain Manual setup and clarify that requirement.
-
-This review covers the install lifecycle and the listed regression checks. It is
-not an independent security audit of all agents, dependencies or provider behavior.

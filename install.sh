@@ -66,6 +66,7 @@ if $uninstall; then
   say "Removing JARVIS"
   # Do not leave an old TCP proxy able to send credentials to a replacement server.
   node "$ROOT/server/lib/tailscale.mjs" disable
+  if "$ROOT/bin/jarvis" standalone-running; then "$ROOT/bin/jarvis" stop; fi
   systemctl --user disable --now omarchy-jarvis.service 2>/dev/null || true
   rm -f "$UNIT"
   systemctl --user daemon-reload 2>/dev/null || true
@@ -205,13 +206,18 @@ EOF
   # Reject invalid generated units before asking the user manager to start them.
   systemd-analyze --user verify "$UNIT"
   systemctl --user daemon-reload
-  systemctl --user enable --now omarchy-jarvis.service
-  sleep 2
-  if systemctl --user is-active --quiet omarchy-jarvis.service; then
-    echo "  service is running"
+  if "$ROOT/bin/jarvis" standalone-running; then
+    systemctl --user enable omarchy-jarvis.service
+    echo "  service enabled; the current bridge will hand over on the next stop and start"
   else
-    warn "service did not start; recent log:"
-    journalctl --user -u omarchy-jarvis.service -n 15 --no-pager || true
+    systemctl --user enable --now omarchy-jarvis.service
+    sleep 2
+    if systemctl --user is-active --quiet omarchy-jarvis.service; then
+      echo "  service is running"
+    else
+      warn "service did not start; recent log:"
+      journalctl --user -u omarchy-jarvis.service -n 15 --no-pager || true
+    fi
   fi
 else
   say "Skipping the service"

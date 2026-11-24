@@ -24,18 +24,21 @@ port() {
   printf '%s' "${value:-4317}"
 }
 
-token() {
+token() (
   local file="$STATE/token"
   if [[ -s $file ]]; then
     tr -d '\n' <"$file"
     return
   fi
   local fresh
+  exec 8>"$STATE/token.lock"
+  flock -x 8
+  if [[ -s $file ]]; then tr -d '\n' <"$file"; return; fi
   fresh=$(head -c 16 /dev/urandom | base64 | tr '+/' '-_' | tr -d '=\n')
   printf '%s\n' "$fresh" >"$file"
   chmod 600 "$file"
   printf '%s' "$fresh"
-}
+)
 
 lan_ip() {
   ip route get 1.1.1.1 2>/dev/null |
@@ -90,43 +93,57 @@ using_systemd() {
     systemctl --user cat "$UNIT" &>/dev/null
 }
 
-running() {
-  if using_systemd; then
-    systemctl --user is-active --quiet "$UNIT"
-  else
-    [[ -f $PIDFILE ]] && kill -0 "$(cat "$PIDFILE" 2>/dev/null)" 2>/dev/null
-  fi
+standalone_running() {
+  local pid
+  local -a argv
+  [[ -r $PIDFILE ]] && read -r pid <"$PIDFILE" && [[ $pid =~ ^[1-9][0-9]*$ ]] || return 1
+  [[ -r /proc/$pid/cmdline ]] && mapfile -d '' -t argv <"/proc/$pid/cmdline" || return 1
+  [[ ${argv[0]:-} == node && ${argv[1]:-} == "$SERVER" ]]
 }
 
-cmd_start() {
-  if running; then
+cmd_start() (
+  exec 9>"$STATE/start.lock"
+  flock -w 30 9 || { echo "Timed out waiting for bridge startup" >&2; return 1; }
+  token >/dev/null
+  if local_api health | jq -e '.ok == true' >/dev/null; then return 0; fi
+  if standalone_running; then
     echo "JARVIS is already running"
   elif using_systemd; then
     systemctl --user start "$UNIT"
   else
-    nohup node "$SERVER" >>"$LOGFILE" 2>&1 &
+    setsid node "$SERVER" </dev/null >>"$LOGFILE" 2>&1 9>&- &
     echo $! >"$PIDFILE"
   fi
   for _ in $(seq 1 60); do
-    if local_api health 2>/dev/null | grep -q true; then
-      break
+    if local_api health | jq -e '.ok == true' >/dev/null; then
+      echo "JARVIS started."
+      return 0
     fi
     sleep 0.25
   done
-  echo "JARVIS started. Open the Phone tab or run jarvis qr for an access link."
-}
+  echo "Bridge startup failed. Check $LOGFILE" >&2
+  return 1
+)
 
-cmd_stop() {
+cmd_stop() (
+  exec 9>"$STATE/start.lock"
+  flock -w 30 9 || return 1
   # Retire old TCP proxies before freeing the port. Fail closed on cleanup errors.
   node "$ROOT/server/lib/tailscale.mjs" retire-legacy
-  if using_systemd; then
-    systemctl --user stop "$UNIT" 2>/dev/null || true
-  elif [[ -f $PIDFILE ]]; then
-    kill "$(cat "$PIDFILE")" 2>/dev/null || true
+  if standalone_running; then
+    kill "$(cat "$PIDFILE")"
+    for _ in $(seq 1 80); do
+      standalone_running || break
+      sleep 0.1
+    done
+    if standalone_running; then echo "Bridge is still stopping" >&2; return 1; fi
     rm -f "$PIDFILE"
   fi
+  if using_systemd; then
+    systemctl --user stop "$UNIT" 2>/dev/null || true
+  fi
   echo "JARVIS stopped"
-}
+)
 
 cmd_status() {
   local healthy=false
@@ -224,7 +241,7 @@ cmd_reset() {
 # The certificate embeds every local IP, so a new network means a new cert.
 cmd_cert() {
   rm -f "$STATE/cert.pem" "$STATE/key.pem"
-  if running; then
+  if standalone_running || (using_systemd && systemctl --user is-active --quiet "$UNIT"); then
     cmd_stop >/dev/null
     cmd_start
   else
@@ -266,6 +283,7 @@ setup) exec bash "$ROOT/install.sh" --no-plugin ;;
 setup-status) exec node "$ROOT/server/setup.mjs" --check ;;
 models) exec node "$ROOT/server/setup.mjs" --models ;;
 uninstall) exec bash "$ROOT/install.sh" --uninstall ;;
+standalone-running) standalone_running ;;
 start) cmd_start ;;
 stop) cmd_stop ;;
 restart) cmd_stop; cmd_start ;;
