@@ -190,7 +190,7 @@ Ui.Panel {
   function applyStatus(payload) {
     root.status = payload || ({})
     root.statusLoaded = true
-    if (root.agent.modelSelectable === true && root.modelListing.agent !== root.agent.id) root.command({ action: "models" })
+    if (root.opened && desktop.running && root.agent.modelSelectable === true && root.modelListing.agent !== root.agent.id) root.command({ action: "models" })
     if (!root.running) { root.qrImage = ""; root.qrForUrl = ""; return }
     if (root.opened && root.link && root.qrForUrl !== root.link) root.loadQr()
   }

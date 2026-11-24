@@ -182,7 +182,8 @@ async function dispatch(data) {
   }
   if (data.action === 'models') {
     // Metadata must not take the chat/recording lock or change activity state.
-    if (!modelLookup) modelLookup = request('models')
+    if (modelLookup) return;
+    modelLookup = request('models')
       .then(listing => emit('models', JSON.parse(listing)))
       .finally(() => { modelLookup = null; });
     return modelLookup;

@@ -5,7 +5,7 @@ import vm from 'node:vm';
 // Exercise the desktop dispatcher with a deliberately stalled metadata request.
 const source = fs.readFileSync(new URL('../server/desktop.mjs', import.meta.url), 'utf8');
 const perform = source.slice(source.indexOf('async function perform('), source.indexOf('async function finishRecording('));
-const dispatch = source.slice(source.indexOf('async function dispatch('), source.indexOf('readline.createInterface('));
+const dispatch = source.slice(source.indexOf('async function dispatch('), source.indexOf('// Bound unterminated input'));
 let resolveModels;
 const pendingModels = new Promise(resolve => { resolveModels = resolve; });
 const events = [];
@@ -19,6 +19,7 @@ const context = vm.createContext({
 vm.runInContext(`let operation = false, recording = null, generation = 0, modelLookup = null; ${perform}\n${dispatch}`, context);
 const lookup = vm.runInContext("dispatch({action:'models'})", context);
 const duplicate = vm.runInContext("dispatch({action:'models'})", context);
+assert.equal(await Promise.race([duplicate.then(() => 'released'), new Promise(resolve => setImmediate(() => resolve('occupied')))]), 'released');
 assert.equal(lookups, 1);
 assert.equal(vm.runInContext('operation', context), false);
 assert.equal(vm.runInContext('generation', context), 0);
